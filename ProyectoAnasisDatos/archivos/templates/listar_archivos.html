@@ -1,0 +1,21 @@
+<h2>Archivos Subidos</h2>
+<table>
+    <tr>
+        <th>ID</th>
+        <th>Nombre</th>
+        <th>Fecha de Subida</th>
+        <th>Acciones</th>
+    </tr>
+    {% for archivo in archivos %}
+    <tr>
+        <td>{{ archivo.id }}</td>
+        <td>{{ archivo.nombre }}</td>
+        <td>{{ archivo.fecha_subida }}</td>
+        <td>
+            <a href="{% url 'ver_archivo' archivo.id %}">Ver Contenido</a> |
+            <a href="{% url 'eliminar_archivo' archivo.id %}">Eliminar</a>
+        </td>
+    </tr>
+    {% endfor %}
+</table>
+

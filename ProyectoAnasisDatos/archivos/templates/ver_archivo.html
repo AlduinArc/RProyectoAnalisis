@@ -1,0 +1,26 @@
+<h1>Contenido del archivo: {{ archivo.nombre }}</h1>
+
+{% if error %}
+    <p style="color: red;">Error: {{ error }}</p>
+{% else %}
+    <table border="1">
+        <thead>
+            <tr>
+                <!-- Mostrar las columnas del DataFrame -->
+                {% for column in df.columns %}
+                    <th>{{ column }}</th>
+                {% endfor %}
+            </tr>
+        </thead>
+        <tbody>
+            {% for row in df.values %}
+                <tr>
+                    <!-- Mostrar los valores de cada fila -->
+                    {% for value in row %}
+                        <td>{{ value }}</td>
+                    {% endfor %}
+                </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+{% endif %}
