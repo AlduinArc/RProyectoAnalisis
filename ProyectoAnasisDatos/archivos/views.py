@@ -3,6 +3,10 @@ from django.shortcuts import render, redirect, get_object_or_404
 from .models import ArchivoSubido
 import os
 from django.conf import settings
+import matplotlib.pyplot as plt
+import uuid
+from django.templatetags.static import static
+
 
 # Create your views here.
 from .forms import ArchivoForm
@@ -40,21 +44,34 @@ def listar_archivos(request):
 
 def ver_archivo(request, id):
     archivo = get_object_or_404(ArchivoSubido, id=id)
-    filepath = archivo.archivo.path  # Ruta del archivo
+    filepath = archivo.archivo.path
 
     try:
-        # Leer el archivo CSV y asegurarnos de que las columnas sean las correctas
-        df = pd.read_csv(filepath, on_bad_lines='skip')
-
-        # Si no hay nombres de columna, podemos agregar nombres por defecto
+        df = pd.read_csv(filepath, delimiter=';', on_bad_lines='skip')
         if df.columns.isnull().any():
             df.columns = [f"Columna_{i+1}" for i in range(df.shape[1])]
 
+        # Crear gráfico con Matplotlib
+        fig, ax = plt.subplots()
+        df[df.columns[1]] = pd.to_numeric(df[df.columns[1]], errors='coerce')  # Por si hay errores
+        df.plot(x=df.columns[0], y=df.columns[1], ax=ax)
+
+        # Guardar la imagen temporalmente
+        filename = f"{uuid.uuid4()}.png"
+        ruta_imagen = os.path.join(settings.MEDIA_ROOT, filename)
+        fig.savefig(ruta_imagen, bbox_inches='tight')
+        plt.close(fig)
+
+        url_imagen = settings.MEDIA_URL + filename
+
     except Exception as e:
-        # Si ocurre un error, mostrar el mensaje
         return render(request, 'ver_archivo.html', {'error': str(e)})
 
-    return render(request, 'ver_archivo.html', {'df': df, 'archivo': archivo})
+    return render(request, 'ver_archivo.html', {
+        'df': df,
+        'archivo': archivo,
+        'grafico_url': url_imagen
+    })
 
 def eliminar_archivo(request, archivo_id):
     archivo = get_object_or_404(ArchivoSubido, pk=archivo_id)

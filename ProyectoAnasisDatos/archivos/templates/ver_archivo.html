@@ -3,24 +3,13 @@
 {% if error %}
     <p style="color: red;">Error: {{ error }}</p>
 {% else %}
-    <table border="1">
-        <thead>
-            <tr>
-                <!-- Mostrar las columnas del DataFrame -->
-                {% for column in df.columns %}
-                    <th>{{ column }}</th>
-                {% endfor %}
-            </tr>
-        </thead>
-        <tbody>
-            {% for row in df.values %}
-                <tr>
-                    <!-- Mostrar los valores de cada fila -->
-                    {% for value in row %}
-                        <td>{{ value }}</td>
-                    {% endfor %}
-                </tr>
-            {% endfor %}
-        </tbody>
-    </table>
+    <!-- Mostrar el DataFrame como tabla HTML -->
+    <h2>Contenido del archivo:</h2>
+    {{ df.to_html|safe }}
+
+    <!-- Si se genera un gráfico, mostrarlo -->
+    {% if grafico_url %}
+        <h3>Gráfica generada:</h3>
+        <img src="{{ grafico_url }}" class="img-fluid" alt="Gráfico generado">
+    {% endif %}
 {% endif %}
