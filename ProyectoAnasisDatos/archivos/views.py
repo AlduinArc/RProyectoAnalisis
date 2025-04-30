@@ -3,6 +3,8 @@ from django.shortcuts import render, redirect, get_object_or_404
 from .models import ArchivoSubido
 import os
 from django.conf import settings
+import matplotlib
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import uuid
 from django.templatetags.static import static

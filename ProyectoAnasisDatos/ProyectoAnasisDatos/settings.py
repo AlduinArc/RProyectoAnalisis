@@ -78,6 +78,27 @@ WSGI_APPLICATION = 'ProyectoAnasisDatos.wsgi.application'
 
 # Database
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
+USE_POSTGRES = os.getenv("USE_POSTGRES", "true").lower() == "true"
+
+if USE_POSTGRES:
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.postgresql',
+            'NAME': os.getenv('POSTGRES_DB', 'nombre_db'),
+            'USER': os.getenv('POSTGRES_USER', 'usuario'),
+            'PASSWORD': os.getenv('POSTGRES_PASSWORD', 'contraseña'),
+            'HOST': 'db',
+            'PORT': 5432,
+        }
+    }
+else:
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.sqlite3',
+            'NAME': BASE_DIR / 'db.sqlite3',
+        }
+    }
+
 
 DATABASES = {
     'default': {
