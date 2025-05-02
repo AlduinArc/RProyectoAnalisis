@@ -1,3 +1,4 @@
+from django.contrib import admin
 from django.urls import path
 from . import views
 
@@ -7,7 +8,7 @@ urlpatterns = [
     path('analizar/<int:archivo_id>/', views.analizar_archivo, name='analizar_archivo'),
     path('ver/<int:id>/', views.ver_archivo, name='ver_archivo'),
     path('eliminar/<int:archivo_id>/', views.eliminar_archivo, name='eliminar_archivo'),
-
+    path('', views.landing_page, name='landing'),
 ]
 
 ##Not Found: /favicon.ico
