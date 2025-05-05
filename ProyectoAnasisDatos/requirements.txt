@@ -1,2 +1,4 @@
-pip freeze > requirements.txt
-pip install django pandas psycopg2-binary
+django>=4.2
+pandas
+psycopg2-binary
+matplotlib
