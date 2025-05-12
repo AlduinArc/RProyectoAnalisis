@@ -11,8 +11,8 @@
     <div class="container-fluid">
         <a class="navbar-brand" href="/">Inicio</a>
         <div class="d-flex">
-            <a href="{% url 'listar_archivos' %}" class="btn btn-outline-light me-2">📄 Listar archivos</a>
-            <a href="{% url 'subir_archivo' %}" class="btn btn-outline-light">📤 Subir archivo</a>
+            <a href="{% url 'listar_archivos' %}" class="btn btn-outline-light me-2">Listar archivos</a>
+            <a href="{% url 'subir_archivo' %}" class="btn btn-outline-light">Subir archivo</a>
         </div>
     </div>
 </nav>
@@ -25,39 +25,15 @@
     {% else %}
         <div class="row mb-3">
             <div class="col-md-6">
-                <p class="mb-1"><strong>🧮 Valores nulos:</strong> {{ nulos }}</p>
-                <p><strong>⭕ Valores cero:</strong> {{ ceros }}</p>
+                <p class="mb-1"><strong>Valores nulos:</strong> {{ nulos }}</p>
+                <p><strong>Valores cero:</strong> {{ ceros }}</p>
             </div>
         </div>
 
-        <form method="get" class="row g-3 align-items-end mb-4">
-            <div class="col-md-5">
-                <label class="form-label">📊 Fila</label>
-                <select name="x" class="form-select">
-                    {% for col in columnas %}
-                    <option value="{{ col }}">{{ col }}</option>
-                    {% endfor %}
-                </select>
-            </div>
-            <div class="col-md-5">
-                <label class="form-label">📈 Columna</label>
-                <select name="y" class="form-select">
-                    {% for col in columnas %}
-                    <option value="{{ col }}">{{ col }}</option>
-                    {% endfor %}
-                </select>
-            </div>
-            <div class="col-md-2">
-                <button type="submit" class="btn btn-primary w-100">Generar gráfica</button>
-            </div>
-        </form>
-
-        {% if grafico_url %}
-        <div class="mb-4">
-            <h5>Gráfico generado</h5>
-            <img src="{{ grafico_url }}" class="img-fluid border rounded shadow">
+        <!-- Botón para ver gráficos en otra página -->
+        <div class="text-end mb-4">
+            <a href="{% url 'ver_grafica' archivo.id %}" class="btn btn-success">Ver gráficos</a>
         </div>
-        {% endif %}
 
         <div class="mt-4">
             <h5>Vista previa de datos</h5>
