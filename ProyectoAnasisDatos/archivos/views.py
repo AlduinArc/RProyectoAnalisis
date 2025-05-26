@@ -1,19 +1,28 @@
-import pandas as pd
-from django.shortcuts import render, redirect, get_object_or_404
-from .models import ArchivoSubido
 import os
-from django.conf import settings
+import uuid
+import pandas as pd
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
-import uuid
-from django.templatetags.static import static
-
-
-# Create your views here.
+import base64
+from django.shortcuts import render, redirect, get_object_or_404
+from django.conf import settings
+from .models import ArchivoSubido
 from .forms import ArchivoForm
+from django.template.loader import render_to_string
+from django.http import JsonResponse
+from io import BytesIO
+
+
+def interfaz(request):
+    archivos = ArchivoSubido.objects.all()
+    return render(request, 'interfaz.html', {'archivos': archivos})
+
+
+
 def landing_page(request):
     return render(request, 'landing.html')
+
 
 def subir_archivo(request):
     if request.method == 'POST':
@@ -23,13 +32,23 @@ def subir_archivo(request):
     else:
         form = ArchivoForm()
 
+    if request.headers.get('x-requested-with') == 'XMLHttpRequest':
+        return render(request, 'partials/subir_contenido.html', {'form': form})
     return render(request, 'subir_archivo.html', {'form': form})
 
+
+def listar_archivos(request):
+    archivos = ArchivoSubido.objects.all()
+
+    if request.headers.get('x-requested-with') == 'XMLHttpRequest':
+        return render(request, 'partials/listar_contenido.html', {'archivos': archivos})
+    return render(request, 'listar_archivos.html', {'archivos': archivos})
+
+
 def analizar_archivo(request, archivo_id):
-    archivo_obj = ArchivoSubido.objects.get(id=archivo_id)
+    archivo_obj = get_object_or_404(ArchivoSubido, id=archivo_id)
     ruta_completa = os.path.join(settings.MEDIA_ROOT, archivo_obj.archivo.name)
 
-    # Leer el archivo dependiendo del tipo
     if ruta_completa.endswith('.csv'):
         df = pd.read_csv(ruta_completa)
     elif ruta_completa.endswith('.xlsx'):
@@ -37,15 +56,14 @@ def analizar_archivo(request, archivo_id):
     else:
         df = pd.DataFrame({'Error': ['Formato no soportado']})
 
-    # Convertir el DataFrame a HTML para mostrarlo
     tabla_html = df.to_html(classes='table table-striped')
 
-    return render(request, 'analizar_archivo.html', {'tabla': tabla_html, 'archivo': archivo_obj})
+    contexto = {'tabla': tabla_html, 'archivo': archivo_obj}
+    if request.headers.get('x-requested-with') == 'XMLHttpRequest':
+        return render(request, 'partials/analizar_contenido.html', contexto)
+    return render(request, 'analizar_archivo.html', contexto)
 
-def listar_archivos(request):
-    archivos = ArchivoSubido.objects.all()
-    return render(request, 'listar_archivos.html', {'archivos': archivos})
-'''
+
 def ver_archivo(request, id):
     archivo = get_object_or_404(ArchivoSubido, id=id)
     filepath = archivo.archivo.path
@@ -55,74 +73,44 @@ def ver_archivo(request, id):
         if df.columns.isnull().any():
             df.columns = [f"Columna_{i+1}" for i in range(df.shape[1])]
 
-        # Crear gráfico con Matplotlib
-        fig, ax = plt.subplots()
-        df[df.columns[1]] = pd.to_numeric(df[df.columns[1]], errors='coerce')  # Por si hay errores
-        df.plot(x=df.columns[0], y=df.columns[1], ax=ax)
-
-        # Guardar la imagen temporalmente
-        filename = f"{uuid.uuid4()}.png"
-        ruta_imagen = os.path.join(settings.MEDIA_ROOT, filename)
-        fig.savefig(ruta_imagen, bbox_inches='tight')
-        plt.close(fig)
-
-        url_imagen = settings.MEDIA_URL + filename
-
-    except Exception as e:
-        return render(request, 'ver_archivo.html', {'error': str(e)})
-
-    return render(request, 'ver_archivo.html', {
-        'df': df,
-        'archivo': archivo,
-        'grafico_url': url_imagen
-    })
-'''
-def ver_archivo(request, id):
-    archivo = get_object_or_404(ArchivoSubido, id=id)
-    filepath = archivo.archivo.path
-
-    try:
-        df = pd.read_csv(filepath, delimiter=';', on_bad_lines='skip')
-        if df.columns.isnull().any():
-            df.columns = [f"Columna_{i+1}" for i in range(df.shape[1])]
-
-        # Contar nulos y ceros
         nulos = df.isnull().sum().sum()
         ceros = (df == 0).sum().sum()
 
-        # Parámetros para graficar
         columnas = df.columns.tolist()
         x_col = request.GET.get('x', columnas[0])
         y_col = request.GET.get('y', columnas[1] if len(columnas) > 1 else columnas[0])
 
-        # Crear gráfico
         fig, ax = plt.subplots()
         df[y_col] = pd.to_numeric(df[y_col], errors='coerce')
         df_grafico = df[[x_col, y_col]].dropna()
+
         if not df_grafico.empty:
             df_grafico.plot(x=x_col, y=y_col, ax=ax)
         else:
-            ax.text(0.5, 0.5, "No hay datos válidos para graficar", 
+            ax.text(0.5, 0.5, "No hay datos válidos para graficar",
                     ha='center', va='center', transform=ax.transAxes)
 
- 
         filename = f"{uuid.uuid4()}.png"
         ruta_imagen = os.path.join(settings.MEDIA_ROOT, filename)
         fig.savefig(ruta_imagen, bbox_inches='tight')
         plt.close(fig)
-
         url_imagen = settings.MEDIA_URL + filename
 
         with pd.option_context('display.max_rows', None, 'display.max_columns', None):
             tabla_html = df.to_html()
-        return render(request, 'ver_archivo.html', {
-        'df': tabla_html,
-        'archivo': archivo,
-        'grafico_url': url_imagen,
-        'nulos': nulos,
-        'ceros': ceros,
-        'columnas': columnas
-})
+
+        contexto = {
+            'df': tabla_html,
+            'archivo': archivo,
+            'grafico_url': url_imagen,
+            'nulos': nulos,
+            'ceros': ceros,
+            'columnas': columnas
+        }
+
+        if request.headers.get('x-requested-with') == 'XMLHttpRequest':
+            return render(request, 'partials/ver_contenido.html', contexto)
+        return render(request, 'ver_archivo.html', contexto)
 
     except Exception as e:
         return render(request, 'ver_grafica.html', {
@@ -131,66 +119,55 @@ def ver_archivo(request, id):
             'error': str(e)
         })
 
-    
 
 def ver_grafica(request, id):
     archivo = get_object_or_404(ArchivoSubido, id=id)
-    filepath = archivo.archivo.path
+    df = pd.read_csv(archivo.archivo.path, sep=';', on_bad_lines='skip')
+    columnas = df.columns.tolist()
+
+    x = request.GET.get('x')
+    y = request.GET.get('y')
+    tipo = request.GET.get('tipo', 'line')
+
+    grafico_url = None
+    error = None
 
     try:
-        df = pd.read_csv(filepath, delimiter=';', on_bad_lines='skip')
-        if df.columns.isnull().any():
-            df.columns = [f"Columna_{i+1}" for i in range(df.shape[1])]
-
-        columnas = df.columns.tolist()
-        x_col = request.GET.get('x')
-        y_col = request.GET.get('y')
-        tipo = request.GET.get('tipo', 'line')  # puede ser 'line', 'bar', 'pie'
-
-        grafico_url = None
-        error = None
-
-        if x_col and y_col and x_col in columnas and y_col in columnas and x_col != y_col:
+        if x and y and x in df.columns and y in df.columns:
             fig, ax = plt.subplots()
-
-            df[y_col] = pd.to_numeric(df[y_col], errors='coerce')
-            df_grafico = df[[x_col, y_col]].dropna()
-
-            if df_grafico.empty:
-                error = "No hay datos válidos para graficar."
+            if tipo == 'line':
+                df.plot(x=x, y=y, ax=ax)
+            elif tipo == 'bar':
+                df.plot.bar(x=x, y=y, ax=ax)
+            elif tipo == 'pie':
+                df[y].value_counts().plot.pie(ax=ax, autopct='%1.1f%%')
             else:
-                if tipo == 'pie':
-                    # Agrupamos por x_col y sumamos y_col
-                    df_pie = df_grafico.groupby(x_col)[y_col].sum()
-                    df_pie.plot.pie(ax=ax, autopct='%1.1f%%', startangle=90)
-                    ax.set_ylabel('')  # ocultar label por estética
-                elif tipo == 'bar':
-                    df_grafico.plot(x=x_col, y=y_col, kind='bar', ax=ax)
-                else:  # por defecto: línea
-                    df_grafico.plot(x=x_col, y=y_col, ax=ax)
+                raise ValueError("Tipo de gráfico no válido")
 
-                filename = f"{uuid.uuid4()}.png"
-                ruta_imagen = os.path.join(settings.MEDIA_ROOT, filename)
-                fig.savefig(ruta_imagen, bbox_inches='tight')
-                plt.close(fig)
-                grafico_url = settings.MEDIA_URL + filename
-
-        return render(request, 'ver_grafica.html', {
-            'archivo': archivo,
-            'columnas': columnas,
-            'grafico_url': grafico_url,
-            'error': error
-        })
-
+            buf = BytesIO()
+            plt.tight_layout()
+            plt.savefig(buf, format='png')
+            plt.close(fig)
+            grafico_url = 'data:image/png;base64,' + base64.b64encode(buf.getvalue()).decode()
+            buf.close()
     except Exception as e:
-        return render(request, 'ver_grafica.html', {
-            'archivo': archivo,
-            'columnas': [],
-            'error': str(e)
-        })
+        error = str(e)
 
+    context = {
+        'archivo': archivo,
+        'columnas': columnas,
+        'grafico_url': grafico_url,
+        'error': error,
+        'x_seleccionada': x,
+        'y_seleccionada': y,
+        'tipo': tipo,
+    }
 
+    if request.headers.get('x-requested-with') == 'XMLHttpRequest':
+        html = render_to_string('fragmento_grafica.html', context)
+        return JsonResponse({'html': html})
 
+    return render(request, 'ver_grafica.html', context)
 
 def eliminar_archivo(request, archivo_id):
     archivo = get_object_or_404(ArchivoSubido, pk=archivo_id)
@@ -200,4 +177,4 @@ def eliminar_archivo(request, archivo_id):
         os.remove(archivo_path)
 
     archivo.delete()
-    return redirect('listar_archivos')  # redirige a la vista de listado
+    return redirect('listar_archivos')

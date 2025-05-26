@@ -9,7 +9,8 @@ urlpatterns = [
     path('ver/<int:id>/', views.ver_archivo, name='ver_archivo'),
     path('eliminar/<int:archivo_id>/', views.eliminar_archivo, name='eliminar_archivo'),
     path('grafica/<int:id>/', views.ver_grafica, name='ver_grafica'),
-    path('', views.landing_page, name='landing'),
+    path('landing/', views.landing_page, name='landing'),
+    path('', views.interfaz, name='interfaz')
 ]
 
 ##Not Found: /favicon.ico

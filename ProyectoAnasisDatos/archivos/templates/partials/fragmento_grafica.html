@@ -1,0 +1,7 @@
+{% if grafico_url %}
+    <img src="{{ grafico_url }}" class="img-fluid" alt="Gráfico generado">
+{% elif error %}
+    <p class="text-danger">{{ error }}</p>
+{% else %}
+    <p class="text-warning">No se pudo generar el gráfico.</p>
+{% endif %}
