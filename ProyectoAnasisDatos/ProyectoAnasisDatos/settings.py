@@ -15,8 +15,24 @@ import os
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
+LOGIN_URL = '/login/'
+LOGIN_REDIRECT_URL = '/interfaz/'
 MEDIA_URL = '/media/'
 MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
+
+# Configuración de sesiones (para cerrar al navegador)
+SESSION_EXPIRE_AT_BROWSER_CLOSE = True  # La sesión se cierra al cerrar el navegador
+#SESSION_SAVE_EVERY_REQUEST = True  # Renueva la sesión con cada petición
+
+# Opcional: Invalida la sesión después de un tiempo de inactividad (en segundos)
+#SESSION_COOKIE_AGE = 3600  # 1 hora (ajusta según necesidades)
+
+
+MIDDLEWARE = [
+    # ...
+    'archivos.middleware.SessionCleanupMiddleware',
+    # ...
+]
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent

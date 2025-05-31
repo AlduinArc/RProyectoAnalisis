@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Login</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body {
+            background-color: #121212;
+            color: white;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            height: 100vh;
+            display: flex;
+            align-items: center;
+        }
+        .login-container {
+            max-width: 400px;
+            margin: 0 auto;
+            padding: 2rem;
+            background-color: #1e1e1e;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+        }
+        .form-control {
+            background-color: #2d2d2d;
+            border: 1px solid #444;
+            color: white;
+            margin-bottom: 1rem;
+        }
+        .form-control:focus {
+            background-color: #2d2d2d;
+            color: white;
+            border-color: #03a9f4;
+            box-shadow: 0 0 0 0.25rem rgba(3, 169, 244, 0.25);
+        }
+        .btn-primary {
+            background-color: #03a9f4;
+            border: none;
+            padding: 10px;
+            font-weight: 500;
+        }
+        .btn-primary:hover {
+            background-color: #0288d1;
+        }
+        .login-title {
+            text-align: center;
+            margin-bottom: 1.5rem;
+            color: #03a9f4;
+        }
+        .error-message {
+            background-color: #ff4444;
+            color: white;
+            padding: 10px;
+            border-radius: 4px;
+            margin-bottom: 1rem;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="login-container">
+            <h2 class="login-title">Inicio de Sesion</h2>
+            
+            {% if error %}
+            <div class="error-message">
+                {{ error }}
+            </div>
+            {% endif %}
+            
+            <form method="POST" action="{% url 'login' %}">
+                {% csrf_token %}
+                <div class="mb-3">
+                    <input type="text" class="form-control" name="username" placeholder="Nombre de usuario" required>
+                </div>
+                <div class="mb-3">
+                    <input type="password" class="form-control" name="password" placeholder="Contraseña" required>
+                </div>
+                <button type="submit" class="btn btn-primary w-100">Ingresar</button>
+            </form>
+            
+            {% comment %} Opcional: Enlace para registro o recuperacion {% endcomment %}
+            <div class="mt-3 text-center">
+                <a href="#" style="color: #03a9f4; text-decoration: none;">¿Olvidaste tu contrasena?</a>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

@@ -11,10 +11,6 @@
 <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
     <div class="container-fluid">
         <a class="navbar-brand" href="/">Inicio</a>
-        <div class="d-flex">
-            <a href="{% url 'listar_archivos' %}" class="btn btn-outline-light me-2">Listar archivos</a>
-            <a href="{% url 'subir_archivo' %}" class="btn btn-outline-light">Subir archivo</a>
-        </div>
     </div>
 </nav>
 
@@ -63,48 +59,40 @@
 </div>
 
 <script>
+$(document).ready(function() {
     $('#grafica-form').on('submit', function(e) {
         e.preventDefault();
-
-        let x = $('#x').val();
-        let y = $('#y').val();
-        let tipo = $('#tipo').val();
-        let url = window.location.pathname + `?x=${x}&y=${y}&tipo=${tipo}`;
-
+        
+        // Mostrar carga
+        $('#contenedor-grafica').html('<div class="text-center"><div class="spinner-border text-primary" role="status"><span class="visually-hidden">Cargando...</span></div></div>');
+        
+        let formData = $(this).serialize();
+        let url = window.location.pathname + '?' + formData;
+        
         $.ajax({
             url: url,
             type: 'GET',
+            dataType: 'json',
             headers: { 'X-Requested-With': 'XMLHttpRequest' },
-            success: function(data) {
-                const nuevaGrafica = $(data).find('#contenedor-grafica').html();
-                $('#contenedor-grafica').html(nuevaGrafica);
+            success: function(response) {
+                if (response.grafico_url) {
+                    // Actualizar la imagen del gráfico
+                    let img = $('<img>', {
+                        src: response.grafico_url + '?' + new Date().getTime(), // Cache buster
+                        class: 'img-fluid border rounded shadow',
+                        alt: 'Gráfico generado'
+                    });
+                    $('#contenedor-grafica').html(img);
+                } else if (response.error) {
+                    $('#contenedor-grafica').html('<div class="alert alert-danger">' + response.error + '</div>');
+                }
             },
-            error: function() {
-                $('#contenedor-grafica').html('<div class="alert alert-danger">No se pudo generar la gráfica.</div>');
+            error: function(xhr, status, error) {
+                $('#contenedor-grafica').html('<div class="alert alert-danger">Error al generar la gráfica: ' + error + '</div>');
             }
         });
     });
-</script>
-<script>
-    $('#grafica-form').on('submit', function(e) {
-        e.preventDefault();
-
-        let x = $('#x').val();
-        let y = $('#y').val();
-        let tipo = $('#tipo').val();
-
-        $.ajax({
-            url: window.location.pathname + `?x=${x}&y=${y}&tipo=${tipo}`,
-            method: 'GET',
-            headers: { 'X-Requested-With': 'XMLHttpRequest' },
-            success: function(data) {
-                $('#contenedor-grafica').html(data.html);
-            },
-            error: function() {
-                $('#contenedor-grafica').html('<div class="alert alert-danger">Error al cargar la gráfica.</div>');
-            }
-        });
-    });
+});
 </script>
 
 </body>

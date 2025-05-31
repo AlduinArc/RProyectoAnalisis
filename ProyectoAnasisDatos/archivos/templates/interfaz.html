@@ -11,6 +11,7 @@
         .menu button { margin-bottom: 10px; width: 100%; }
         .contenido { flex-grow: 1; padding: 20px; overflow-y: auto; }
     </style>
+    
 </head>
 <body>
     <div class="menu">
@@ -19,6 +20,17 @@
         <button id="btn-analisis" class="btn btn-outline-success btn-cargar" disabled>Análisis descriptivo</button>
         <button id="btn-procesar" class="btn btn-outline-success btn-cargar" disabled>Procesamiento</button>
         <button id="btn-modelar" class="btn btn-outline-success btn-cargar" disabled>Modelado</button>
+    <div class="flex-grow-1"></div>
+
+    <!-- Botón de logout -->
+    <div class="mt-3">
+        <form action="{% url 'logout' %}" method="post">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-danger w-100">
+                <i class="fas fa-sign-out-alt me-2"></i> Cerrar sesión
+            </button>
+        </form>
+    </div>
     </div>
 
     <div class="contenido" id="contenido">
@@ -40,7 +52,7 @@
                 url = `/ver/${id}/`;
             } else if (button.id === "btn-procesar") {
                 if (!id) return alert("Debes seleccionar un archivo primero.");
-                url = `/ver/${id}/`;  // Ajusta si tienes otra URL
+                url = `/grafica/${id}/`;  // Ajusta si tienes otra URL
             } else if (button.id === "btn-modelar") {
                 if (!id) return alert("Debes seleccionar un archivo primero.");
                 url = `/grafica/${id}/`;
@@ -67,20 +79,50 @@
         });
 
         // Delegación para botón "Seleccionar" que se carga dinámicamente
-        document.addEventListener("click", function (e) {
-            if (e.target.classList.contains("seleccionar-archivo")) {
-                e.preventDefault();
-                const archivoId = e.target.dataset.id;
-                localStorage.setItem("archivoSeleccionado", archivoId);
+        // Delegación para botones de eliminar y seleccionar
+document.addEventListener("click", function (e) {
+    // Para el botón de eliminar
+    if (e.target.classList.contains("eliminar-archivo")) {
+        e.preventDefault();
+        if (confirm("¿Estás seguro de eliminar este archivo?")) {
+            fetch(e.target.href, {
+                method: 'POST',
+                headers: {
+                    'X-CSRFToken': '{{ csrf_token }}',
+                    'X-Requested-With': 'XMLHttpRequest'
+                }
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    document.getElementById("successMessage").textContent = "Archivo eliminado exitosamente";
+                    const successModal = new bootstrap.Modal(document.getElementById('successModal'));
+                    successModal.show();
+                    
+                    // Recargar el contenido después de 1 segundo
+                    setTimeout(() => {
+                        cargarVista(document.querySelector(".btn-cargar[data-url='{% url 'listar_archivos' %}']"));
+                    }, 1000);
+                }
+            });
+        }
+    }
+    
+    // Para el botón de seleccionar (mantén tu código actual)
+    if (e.target.classList.contains("seleccionar-archivo")) {
+        e.preventDefault();
+        const archivoId = e.target.dataset.id;
+        localStorage.setItem("archivoSeleccionado", archivoId);
 
-                // Activar botones
-                document.getElementById("btn-analisis").disabled = false;
-                document.getElementById("btn-procesar").disabled = false;
-                document.getElementById("btn-modelar").disabled = false;
+        document.getElementById("btn-analisis").disabled = false;
+        document.getElementById("btn-procesar").disabled = false;
+        document.getElementById("btn-modelar").disabled = false;
 
-                alert("Archivo seleccionado con ID: " + archivoId);
-            }
-        });
+        document.getElementById("successMessage").textContent = "Archivo seleccionado con ID: " + archivoId;
+        const successModal = new bootstrap.Modal(document.getElementById('successModal'));
+        successModal.show();
+    }
+});
 
         // Al cargar la página, verificar si hay un archivo ya seleccionado
         window.addEventListener("load", () => {
@@ -92,5 +134,26 @@
             }
         });
     </script>
+    <!-- Modal de éxito -->
+<div class="modal fade" id="successModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-success text-white">
+                <h5 class="modal-title"><i class="fas fa-check-circle me-2"></i>Éxito</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p id="successMessage">Operación completada exitosamente</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-success" data-bs-dismiss="modal">Aceptar</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Incluir Bootstrap JS y Font Awesome -->
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
 </body>
 </html>

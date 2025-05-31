@@ -1,5 +1,11 @@
 <div class="container mt-3">
     <h2 class="mb-4">Listado de archivos</h2>
+    
+    <!-- Botón para subir archivos -->
+    <a href="/subir" class="btn btn-primary mb-4">
+        <i class="fas fa-upload"></i> Subir nuevo archivo
+    </a>
+
     {% if archivos %}
     <div class="table-responsive">
         <table class="table table-bordered table-hover bg-white">
@@ -19,8 +25,7 @@
                     <td>{{ archivo.fecha_subida }}</td>
                     <td>
                         <a href="#" class="btn btn-sm btn-info seleccionar-archivo" data-id="{{ archivo.id }}">Seleccionar</a>
-                        <a href="{% url 'ver_archivo' archivo.id %}" class="btn btn-sm btn-primary">Ver</a>
-                        <a href="{% url 'eliminar_archivo' archivo.id %}" class="btn btn-sm btn-danger">Eliminar</a>
+                        <a href="{% url 'eliminar_archivo' archivo.id %}" class="btn btn-sm btn-danger eliminar-archivo">Eliminar</a>
                     </td>
                 </tr>
                 {% endfor %}
@@ -28,6 +33,6 @@
         </table>
     </div>
     {% else %}
-        <p>No hay archivos subidos aún.</p>
+        <div class="alert alert-info">No hay archivos subidos aún.</div>
     {% endif %}
 </div>
