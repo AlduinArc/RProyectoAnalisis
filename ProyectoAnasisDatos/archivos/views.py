@@ -168,16 +168,18 @@ def ver_archivo(request, id):
     archivo = get_object_or_404(ArchivoSubido, id=id)
     filepath = archivo.archivo.path
     extension = os.path.splitext(filepath)[1].lower()
+
     if extension in ['.csv', '.xlsx', '.xls']:
         try:
             df = pd.read_csv(filepath, delimiter=';', on_bad_lines='skip')
+
             if df.columns.isnull().any():
                 df.columns = [f"Columna_{i+1}" for i in range(df.shape[1])]
 
             nulos = df.isnull().sum().sum()
             ceros = (df == 0).sum().sum()
-
             columnas = df.columns.tolist()
+
             x_col = request.GET.get('x', columnas[0])
             y_col = request.GET.get('y', columnas[1] if len(columnas) > 1 else columnas[0])
 
@@ -188,8 +190,7 @@ def ver_archivo(request, id):
             if not df_grafico.empty:
                 df_grafico.plot(x=x_col, y=y_col, ax=ax)
             else:
-                ax.text(0.5, 0.5, "No hay datos válidos para graficar",
-                        ha='center', va='center', transform=ax.transAxes)
+                ax.text(0.5, 0.5, "No hay datos válidos para graficar", ha='center', va='center', transform=ax.transAxes)
 
             filename = f"{uuid.uuid4()}.png"
             ruta_imagen = os.path.join(settings.MEDIA_ROOT, filename)
@@ -197,11 +198,21 @@ def ver_archivo(request, id):
             plt.close(fig)
             url_imagen = settings.MEDIA_URL + filename
 
+            # Aquí siempre generamos el análisis descriptivo
+            df_analizar = df.apply(pd.to_numeric, errors='coerce')
+            descripcion_html = df_analizar.describe(include='all').fillna('').to_html(
+                classes="table table-striped table-bordered"
+            )
+
             with pd.option_context('display.max_rows', None, 'display.max_columns', None):
-                tabla_html = df.to_html()
+                if request.GET.get('completo') == '1':
+                    tabla_html = df.to_html(classes="table table-striped table-bordered")
+                else:
+                    tabla_html = df.head(7).to_html(classes="table table-striped table-bordered")
 
             contexto = {
                 'df': tabla_html,
+                'descripcion': descripcion_html,
                 'archivo': archivo,
                 'grafico_url': url_imagen,
                 'nulos': nulos,
@@ -211,6 +222,7 @@ def ver_archivo(request, id):
 
             if request.headers.get('x-requested-with') == 'XMLHttpRequest':
                 return render(request, 'partials/ver_contenido.html', contexto)
+
             return render(request, 'ver_archivo.html', contexto)
 
         except Exception as e:
@@ -219,40 +231,7 @@ def ver_archivo(request, id):
                 'columnas': [],
                 'error': str(e)
             })
-    elif extension in ['.jpg', '.jpeg', '.png', '.gif']:
-        try:
-            # Redimensionar imagen para previsualización (opcional)
-            with Image.open(filepath) as img:
-                img.thumbnail((800, 800))  # Ajusta el tamaño máximo
-                preview_path = os.path.join(settings.MEDIA_ROOT, f"preview_{archivo.nombre}")
-                img.save(preview_path)
-            
-            contexto = {
-                'tipo': 'imagen',
-                'imagen_url': archivo.archivo.url,
-                'preview_url': f"{settings.MEDIA_URL}preview_{archivo.nombre}"
-            }
-        except Exception as e:
-            contexto = {
-                'tipo': 'imagen',
-                'error': f"No se pudo procesar la imagen: {str(e)}"
-            }
 
-    # Caso 3: PDF
-    elif extension == '.pdf':
-        contexto = {
-            'tipo': 'pdf',
-            'pdf_url': archivo.archivo.url
-        }
-
-    # Caso 4: Otros tipos (descarga directa)
-    else:
-        return FileResponse(open(filepath, 'rb'), as_attachment=True)
-
-    # Renderizar según el tipo de archivo
-    if request.headers.get('x-requested-with') == 'XMLHttpRequest':
-        return render(request, 'partials/ver_contenido.html', contexto)
-    return render(request, 'ver_archivo.html', contexto)
 
 @login_required
 def ver_grafica(request, id):
@@ -269,13 +248,125 @@ def ver_grafica(request, id):
 
     try:
         if x and y and x in df.columns and y in df.columns:
-            fig, ax = plt.subplots()
+            fig, ax = plt.subplots(figsize=(10, 6))  # mejor tamaño
+            
+            # Preprocesar columnas
+            df = df[[x, y]].dropna()
+
+            # Convertir Y a numérico si es posible
+            df[y] = pd.to_numeric(df[y], errors='coerce')
+            
             if tipo == 'line':
-                df.plot(x=x, y=y, ax=ax)
+                df_sorted = df.sort_values(by=x)  # ordenar para gráfico de línea
+                ax.plot(df_sorted[x], df_sorted[y], marker='o')
+                ax.set_title(f'Tendencia: {y} vs {x}')
+                ax.set_xlabel(x)
+                ax.set_ylabel(y)
+
             elif tipo == 'bar':
-                df.plot.bar(x=x, y=y, ax=ax)
+                # Si x tiene pocos valores únicos, usar groupby
+                if df[x].nunique() < 30:
+                    df_grouped = df.groupby(x)[y].mean().reset_index()
+                    ax.bar(df_grouped[x], df_grouped[y])
+                    ax.set_title(f'Bar chart: {y} promedio por {x}')
+                    ax.set_xlabel(x)
+                    ax.set_ylabel(f'{y} (promedio)')
+                else:
+                    raise ValueError("Demasiados valores únicos para gráfico de barras. Elija otra columna para X.")
+
             elif tipo == 'pie':
-                df[y].value_counts().plot.pie(ax=ax, autopct='%1.1f%%')
+                # Pie chart solo si Y es categórica o pocos valores únicos
+                if df[y].nunique() < 20:
+                    df_counts = df[y].value_counts()
+                    df_counts.plot.pie(ax=ax, autopct='%1.1f%%', startangle=90)
+                    ax.set_ylabel('')
+                    ax.set_title(f'Pie chart de {y}')
+                else:
+                    raise ValueError("Gráfico de torta solo disponible para columnas con pocos valores únicos.")
+            
+            else:
+                raise ValueError("Tipo de gráfico no válido")
+
+            buf = BytesIO()
+            plt.tight_layout()
+            plt.savefig(buf, format='png')
+            plt.close(fig)
+            grafico_url = 'data:image/png;base64,' + base64.b64encode(buf.getvalue()).decode()
+            buf.close()
+
+    except Exception as e:
+        error = str(e)
+
+    context = {
+        'archivo': archivo,
+        'columnas': columnas,
+        'grafico_url': grafico_url,
+        'error': error,
+        'x_seleccionada': x,
+        'y_seleccionada': y,
+        'tipo': tipo,
+    }
+
+    if request.headers.get('x-requested-with') == 'XMLHttpRequest':
+        html = render_to_string('partials/fragmento_grafica.html', context)
+        return JsonResponse({'html': html})
+
+    return render(request, 'ver_grafica.html', context)
+
+
+@login_required
+def analisis_grafico(request, id):
+    archivo = get_object_or_404(ArchivoSubido, id=id)
+    filepath = archivo.archivo.path
+    extension = os.path.splitext(filepath)[1].lower()
+
+    if extension in ['.csv', '.xlsx', '.xls']:
+        try:
+            df = pd.read_csv(filepath, delimiter=';', on_bad_lines='skip')
+
+            # Eliminar fila final si es completamente NaN
+            if df.tail(1).isnull().all(axis=1).any():
+                df = df.iloc[:-1]
+
+            columnas = df.columns.tolist()
+
+            contexto = {
+                'archivo': archivo,
+                'columnas': columnas
+            }
+            return render(request, 'ver_analisis_grafico.html', contexto)
+
+        except Exception as e:
+            return render(request, 'ver_analisis_grafico.html', {
+                'archivo': archivo,
+                'columnas': [],
+                'error': str(e)
+            })
+
+"""
+def analisis_grafico(request, id):
+    archivo = get_object_or_404(ArchivoSubido, id=id)
+    df = pd.read_csv(archivo.archivo.path, sep=';', on_bad_lines='skip')
+    columnas = df.columns.tolist()
+
+    x = request.GET.get('x')
+    y = request.GET.get('y')
+    tipo = request.GET.get('tipo', 'scatter')
+
+    grafico_url = None
+    error = None
+
+    try:
+        if x and y and x in df.columns and y in df.columns:
+            fig, ax = plt.subplots()
+
+            # Gráfico de dispersión (scatter plot)
+            if tipo == 'scatter':
+                df.plot.scatter(x=x, y=y, ax=ax)
+            elif tipo == 'hist':
+                df[y].plot.hist(ax=ax, bins=30)
+            elif tipo == 'box':
+                df[[y]].plot.box(ax=ax)
             else:
                 raise ValueError("Tipo de gráfico no válido")
 
@@ -299,10 +390,94 @@ def ver_grafica(request, id):
     }
 
     if request.headers.get('x-requested-with') == 'XMLHttpRequest':
-        html = render_to_string('fragmento_grafica.html', context)
+        html = render_to_string('partials/fragmento_analisis_grafica.html', context)
         return JsonResponse({'html': html})
 
-    return render(request, 'ver_grafica.html', context)
+    return render(request, 'ver_analisis_grafico.html', context)
+"""
+@login_required 
+def temp_analisis_grafico(request, id): 
+    # Aca una vista temporal para mostrar y opinar del cambio
+    archivo = get_object_or_404(ArchivoSubido, id=id)
+    df = pd.read_csv(archivo.archivo.path, sep=';', on_bad_lines='skip')
+    columnas = df.columns.tolist()
+
+    x = request.GET.get('x')
+    y = request.GET.get('y')
+    tipo = request.GET.get('tipo', 'scatter')
+
+    grafico_url = None
+    error = None
+
+    try:
+        if x and y and x in df.columns and y in df.columns:
+            fig, ax = plt.subplots()
+
+            # Gráfico de dispersión (scatter plot)
+            if tipo == 'scatter':
+                df.plot.scatter(x=x, y=y, ax=ax)
+            elif tipo == 'hist':
+                df[y].plot.hist(ax=ax, bins=30)
+            elif tipo == 'box':
+                df[[y]].plot.box(ax=ax)
+            else:
+                raise ValueError("Tipo de gráfico no válido")
+
+            buf = BytesIO()
+            plt.tight_layout()
+            plt.savefig(buf, format='png')
+            plt.close(fig)
+            grafico_url = 'data:image/png;base64,' + base64.b64encode(buf.getvalue()).decode()
+            buf.close()
+    except Exception as e:
+        error = str(e)
+
+    context = {
+        'archivo': archivo,
+        'columnas': columnas,
+        'grafico_url': grafico_url,
+        'error': error,
+        'x_seleccionada': x,
+        'y_seleccionada': y,
+        'tipo': tipo,
+    }
+
+    if request.headers.get('x-requested-with') == 'XMLHttpRequest':
+        html = render_to_string('partials/fragmento_analisis_grafica.html', context)
+        return JsonResponse({'html': html})
+
+    return render(request, 'temp_ver_analisis_grafico.html', context)
+
+@login_required
+def ver_graficos_columnas(request, id):
+    archivo = get_object_or_404(ArchivoSubido, id=id)
+    filepath = archivo.archivo.path
+    df = pd.read_csv(filepath, delimiter=';', on_bad_lines='skip')
+
+    # Eliminar fila completamente vacía (si existe)
+    if df.tail(1).isnull().all(axis=1).any():
+        df = df.iloc[:-1]
+
+    columnas = request.GET.getlist('columnas')
+    imagenes_urls = []
+
+    for col in columnas:
+        try:
+            df[col] = pd.to_numeric(df[col], errors='coerce')  # Convertir a numérico si se puede
+            fig, ax = plt.subplots()
+            df[col].dropna().plot(kind='hist', ax=ax, bins=20, title=f'Distribución de {col}', color='skyblue')
+            filename = f"{uuid.uuid4()}.png"
+            path = os.path.join(settings.MEDIA_ROOT, filename)
+            fig.savefig(path)
+            plt.close(fig)
+            imagenes_urls.append(settings.MEDIA_URL + filename)
+        except Exception as e:
+            print(f"Error procesando la columna {col}: {e}")
+
+    return render(request, 'partials/graficos_multiples.html', {
+        'imagenes': imagenes_urls
+    })
+
 
 @login_required
 def eliminar_archivo(request, archivo_id):

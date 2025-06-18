@@ -1,0 +1,7 @@
+{% for img in imagenes %}
+    <div class="mb-4">
+        <img src="{{ img }}" class="img-fluid border shadow-sm" alt="Gráfico generado">
+    </div>
+{% empty %}
+    <p>No se pudieron generar gráficos.</p>
+{% endfor %}

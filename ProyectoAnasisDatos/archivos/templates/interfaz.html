@@ -129,8 +129,8 @@ document.addEventListener("click", function (e) {
             const id = localStorage.getItem("archivoSeleccionado");
             if (id) {
                 document.getElementById("btn-analisis").disabled = false;
-                document.getElementById("btn-procesar").disabled = false;
-                document.getElementById("btn-modelar").disabled = false;
+                document.getElementById("btn-procesar").disabled = true; // Cambiar a false cuando se arregle esta parte
+                document.getElementById("btn-modelar").disabled = true;
             }
         });
     </script>

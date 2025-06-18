@@ -14,9 +14,9 @@ def actualizar_nombres():
         if archivo.nombre != nombre_real:
             archivo.nombre = nombre_real
             archivo.save()
-            print(f"✅ Actualizado: {nombre_real}")
+            print(f"Actualizado: {nombre_real}")
         else:
-            print(f"❌ Ya estaba correcto: {nombre_real}")
+            print(f"Ya estaba correcto: {nombre_real}")
 
 if __name__ == "__main__":
     actualizar_nombres()

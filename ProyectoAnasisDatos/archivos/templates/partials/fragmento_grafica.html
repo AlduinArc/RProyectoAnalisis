@@ -1,7 +1,15 @@
 {% if grafico_url %}
-    <img src="{{ grafico_url }}" class="img-fluid" alt="Gráfico generado">
+    <div class="text-center">
+        <img src="{{ grafico_url }}" class="img-fluid border rounded shadow" alt="Gráfico generado" style="max-height: 600px; transition: opacity 0.5s;" onload="this.style.opacity='1';" />
+    </div>
 {% elif error %}
-    <p class="text-danger">{{ error }}</p>
+    <div class="alert alert-danger">{{ error }}</div>
 {% else %}
-    <p class="text-warning">No se pudo generar el gráfico.</p>
+    <div class="alert alert-warning">Seleccione columnas y tipo de gráfico para generar la visualización.</div>
 {% endif %}
+
+<style>
+    #contenedor-grafica img {
+        opacity: 0;
+    }
+</style>

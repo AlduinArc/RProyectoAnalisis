@@ -13,11 +13,44 @@
             <p><strong>Valores nulos:</strong> {{ nulos }}</p>
             <p><strong>Valores cero:</strong> {{ ceros }}</p>
         </div>
+        <div class="mb-3">
+    {% if request.GET.completo == "1" %}
+        <a href="{% url 'interfaz' %}" class="btn btn-secondary me-2">
+            Volver a vista previa
+        </a>
+    {% else %}
+        <a href="{% url 'ver_archivo' archivo.id %}?completo=1" class="btn btn-primary me-2">
+            Ver tabla completa
+        </a>
+    {% endif %}
+    
+    <a href="{% url 'analisis_grafico' archivo.id %}" class="btn btn-success">
+        Gráficos de tendencia
+    </a>
+
+    <a href="{% url 'temp_analisis_grafico' archivo.id %}" class="btn btn-success">
+        Gráficos de tendencia (viejo)
+    </a>
+
+</div>
 
         <h4>Vista previa del archivo</h4>
+        
+        
         <div class="table-responsive" style="max-height: 500px; overflow-x: auto; overflow-y: auto; white-space: nowrap;">
             {{ df|safe }}
         </div>
+
+        <!-- Análisis descriptivo -->
+        <h4 class="mt-4">Análisis descriptivo</h4>
+        <p>Resumen estadístico de las columnas numéricas del archivo:</p>
+        
+        <div class="table-responsive" style="max-height: 500px; overflow-x: auto; overflow-y: auto; white-space: nowrap;">
+            {{ descripcion|safe }}
+        </div>
+
+
+
     </div>
 </body>
 </html>
