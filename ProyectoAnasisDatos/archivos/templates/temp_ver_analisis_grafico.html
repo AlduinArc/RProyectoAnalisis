@@ -41,9 +41,12 @@
         <div class="col-md-2">
             <label class="form-label">Tipo de gráfico</label>
             <select name="tipo" id="tipo" class="form-select">
-                <option value="scatter" {% if tipo == "scatter" %}selected{% endif %}>Dispersión (scatter)</option>
-                <option value="hist" {% if tipo == "hist" %}selected{% endif %}>Histograma</option>
-                <option value="box" {% if tipo == "box" %}selected{% endif %}>Boxplot</option>
+                <option value="scatter">Dispersión</option>
+                <option value="line">Línea</option>
+                <option value="bar">Barras</option>
+                <option value="hist">Histograma</option>
+                <option value="box">Boxplot</option>
+                <option value="pie">Torta</option>
             </select>
         </div>
         <div class="col-md-2">

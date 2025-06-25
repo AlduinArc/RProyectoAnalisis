@@ -200,9 +200,16 @@ def ver_archivo(request, id):
 
             # Aquí siempre generamos el análisis descriptivo
             df_analizar = df.apply(pd.to_numeric, errors='coerce')
-            descripcion_html = df_analizar.describe(include='all').fillna('').to_html(
+            descripcion = df_analizar.describe(include='all')
+
+            # Filtrar si se solicita ocultar columnas con count = 0.0
+            if request.GET.get('ocultar') == '1':
+                descripcion = descripcion.loc[:, descripcion.loc['count'] != 0.0]
+
+            descripcion_html = descripcion.fillna('').to_html(
                 classes="table table-striped table-bordered"
             )
+
 
             with pd.option_context('display.max_rows', None, 'display.max_columns', None):
                 if request.GET.get('completo') == '1':
@@ -396,8 +403,7 @@ def analisis_grafico(request, id):
     return render(request, 'ver_analisis_grafico.html', context)
 """
 @login_required 
-def temp_analisis_grafico(request, id): 
-    # Aca una vista temporal para mostrar y opinar del cambio
+def temp_analisis_grafico(request, id):
     archivo = get_object_or_404(ArchivoSubido, id=id)
     df = pd.read_csv(archivo.archivo.path, sep=';', on_bad_lines='skip')
     columnas = df.columns.tolist()
@@ -410,25 +416,44 @@ def temp_analisis_grafico(request, id):
     error = None
 
     try:
-        if x and y and x in df.columns and y in df.columns:
-            fig, ax = plt.subplots()
+        fig, ax = plt.subplots()
 
-            # Gráfico de dispersión (scatter plot)
-            if tipo == 'scatter':
-                df.plot.scatter(x=x, y=y, ax=ax)
-            elif tipo == 'hist':
-                df[y].plot.hist(ax=ax, bins=30)
-            elif tipo == 'box':
-                df[[y]].plot.box(ax=ax)
-            else:
-                raise ValueError("Tipo de gráfico no válido")
+        # Convertir datos a numéricos si aplica
+        if y in df.columns:
+            df[y] = pd.to_numeric(df[y], errors='coerce')
+        if x in df.columns:
+            df[x] = pd.to_numeric(df[x], errors='coerce')
 
-            buf = BytesIO()
-            plt.tight_layout()
-            plt.savefig(buf, format='png')
-            plt.close(fig)
-            grafico_url = 'data:image/png;base64,' + base64.b64encode(buf.getvalue()).decode()
-            buf.close()
+        if tipo == 'scatter' and x and y:
+            df.plot.scatter(x=x, y=y, ax=ax)
+
+        elif tipo == 'line' and x and y:
+            df.dropna(subset=[x, y]).plot.line(x=x, y=y, ax=ax)
+
+        elif tipo == 'bar' and x and y:
+            df.dropna(subset=[x, y]).groupby(x)[y].mean().plot(kind='bar', ax=ax)
+
+        elif tipo == 'hist' and y:
+            df[y].dropna().plot.hist(ax=ax, bins=30)
+
+        elif tipo == 'box' and y:
+            df[[y]].dropna().plot.box(ax=ax)
+
+        elif tipo == 'pie' and y:
+            conteo = df[y].value_counts().head(10)
+            ax.pie(conteo, labels=conteo.index, autopct='%1.1f%%')
+            ax.set_ylabel("")  # Para que no se muestre 'y' como título lateral
+
+        else:
+            raise ValueError("Tipo de gráfico no válido o columnas no seleccionadas")
+
+        buf = BytesIO()
+        plt.tight_layout()
+        plt.savefig(buf, format='png')
+        plt.close(fig)
+        grafico_url = 'data:image/png;base64,' + base64.b64encode(buf.getvalue()).decode()
+        buf.close()
+
     except Exception as e:
         error = str(e)
 

@@ -41,6 +41,18 @@
             {{ df|safe }}
         </div>
 
+         <!-- Boton de activacion -->
+        <div class="mb-3">
+            {% if request.GET.ocultar %}
+                <a href="{% url 'ver_archivo' archivo.id %}?completo={{ request.GET.completo }}" class="btn btn-warning">
+                    Mostrar columnas con count 0.0
+                </a>
+            {% else %}
+                <a href="{% url 'ver_archivo' archivo.id %}?completo={{ request.GET.completo }}&ocultar=1" class="btn btn-warning">
+                    Ocultar columnas con count 0.0
+                </a>
+            {% endif %}
+        </div>
         <!-- Análisis descriptivo -->
         <h4 class="mt-4">Análisis descriptivo</h4>
         <p>Resumen estadístico de las columnas numéricas del archivo:</p>
