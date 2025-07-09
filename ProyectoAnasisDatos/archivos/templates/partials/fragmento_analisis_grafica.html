@@ -1,7 +1,10 @@
-{% if grafico_url %}
-    <img src="{{ grafico_url }}" class="img-fluid border rounded shadow" alt="Gráfico generado">
-{% elif error %}
-    <p class="text-danger">{{ error }}</p>
+{% if graficos %}
+    {% for grafico in graficos %}
+        <div class="text-center mb-4">
+            <h5>{{ grafico.columna }}</h5>
+            <img src="{{ grafico.imagen }}" class="img-fluid border rounded shadow" alt="Gráfico de {{ grafico.columna }}">
+        </div>
+    {% endfor %}
 {% else %}
-    <p class="text-warning">No se pudo generar el gráfico.</p>
+    <p class="text-warning">No se generaron gráficos.</p>
 {% endif %}

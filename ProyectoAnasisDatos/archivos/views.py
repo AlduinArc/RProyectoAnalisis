@@ -199,8 +199,10 @@ def ver_archivo(request, id):
             url_imagen = settings.MEDIA_URL + filename
 
             # Aquí siempre generamos el análisis descriptivo
-            df_analizar = df.apply(pd.to_numeric, errors='coerce')
-            descripcion = df_analizar.describe(include='all')
+            # Filtrar solo columnas numéricas
+            df_numerico = df.select_dtypes(include='number')
+            descripcion = df_numerico.describe()
+
 
             # Filtrar si se solicita ocultar columnas con count = 0.0
             if request.GET.get('ocultar') == '1':
@@ -335,11 +337,56 @@ def analisis_grafico(request, id):
             if df.tail(1).isnull().all(axis=1).any():
                 df = df.iloc[:-1]
 
-            columnas = df.columns.tolist()
+            # ✅ Filtrar columnas eliminando las que son texto puro (object)
+            columnas_texto = df.select_dtypes(include=['object', 'string']).columns.tolist()
+            columnas_permitidas = [col for col in df.columns if col not in columnas_texto]
 
+            if request.headers.get('x-requested-with') == 'XMLHttpRequest':
+                columnas_seleccionadas = request.GET.getlist('columnas')
+                tipo = request.GET.get('tipo')
+
+                graficos = []
+
+                for col in columnas_seleccionadas:
+                    if col not in df.columns:
+                        continue
+                    
+                    fig, ax = plt.subplots()
+                    df[col] = pd.to_numeric(df[col], errors='coerce')
+
+                    if tipo == 'hist':
+                        df[col].dropna().plot.hist(ax=ax, bins=30, color='skyblue')
+                        ax.set_title(f"Histograma de {col}")
+                    elif tipo == 'box':
+                        df[[col]].dropna().plot.box(ax=ax)
+                        ax.set_title(f"Boxplot de {col}")
+                    elif tipo == 'pie':
+                        conteo = df[col].value_counts().head(10)
+                        ax.pie(conteo, labels=conteo.index, autopct='%1.1f%%')
+                        ax.set_title(f"Gráfico de torta de {col}")
+                        ax.set_ylabel("")
+                    else:
+                        continue
+
+                    buf = BytesIO()
+                    plt.tight_layout()
+                    plt.savefig(buf, format='png')
+                    plt.close(fig)
+                    imagen_base64 = base64.b64encode(buf.getvalue()).decode()
+                    buf.close()
+
+                    graficos.append({
+                        'columna': col,
+                        'imagen': f'data:image/png;base64,{imagen_base64}'
+                    })
+
+                html = render_to_string('partials/fragmento_analisis_grafica.html', {'graficos': graficos})
+                return JsonResponse({'html': html})
+
+            # Si no es AJAX, carga solo la página base con el formulario (solo columnas permitidas)
             contexto = {
                 'archivo': archivo,
-                'columnas': columnas
+                'columnas': columnas_permitidas  # ✔️ Solo columnas filtradas
             }
             return render(request, 'ver_analisis_grafico.html', contexto)
 
@@ -349,6 +396,7 @@ def analisis_grafico(request, id):
                 'columnas': [],
                 'error': str(e)
             })
+
 
 """
 def analisis_grafico(request, id):
@@ -406,11 +454,152 @@ def analisis_grafico(request, id):
 def temp_analisis_grafico(request, id):
     archivo = get_object_or_404(ArchivoSubido, id=id)
     df = pd.read_csv(archivo.archivo.path, sep=';', on_bad_lines='skip')
-    columnas = df.columns.tolist()
+
+    # ✅ Filtrar columnas eliminando las que son texto puro (object)
+    columnas_texto = df.select_dtypes(include=['object', 'string']).columns.tolist()
+    columnas_permitidas = [col for col in df.columns if col not in columnas_texto]
 
     x = request.GET.get('x')
-    y = request.GET.get('y')
-    tipo = request.GET.get('tipo', 'scatter')
+    ys = request.GET.getlist('y')  # ✔️ Capturar múltiples Y
+    tipo = request.GET.get('tipo', 'line')
+
+    graficos = []
+    error = None
+
+    try:
+        if not ys or not x:
+            raise ValueError("Debe seleccionar un eje X y al menos una columna Y.")
+
+        for y in ys:
+            if y not in df.columns or x not in df.columns:
+                continue
+
+            fig, ax = plt.subplots()
+            fig.set_size_inches(6, 4)  # ✅ Ajuste de tamaño
+
+            # Convertir a numérico solo si no es fecha (para seguridad adicional)
+            df[x] = pd.to_numeric(df[x], errors='coerce')
+            df[y] = pd.to_numeric(df[y], errors='coerce')
+
+            df_filtrado = df.dropna(subset=[x, y])
+
+            if tipo == 'line':
+                df_filtrado = df_filtrado.sort_values(by=x)
+                ax.plot(df_filtrado[x], df_filtrado[y], marker='o')
+                ax.set_title(f'Tendencia: {y} sobre {x}')
+            elif tipo == 'scatter':
+                ax.scatter(df_filtrado[x], df_filtrado[y])
+                ax.set_title(f'Dispersión: {y} vs {x}')
+            elif tipo == 'bar':
+                resumen = df_filtrado.groupby(x)[y].mean().sort_values(ascending=False).head(15)
+                resumen.plot(kind='bar', ax=ax, color='skyblue')
+                ax.set_title(f'Promedio de {y} por {x}')
+                ax.set_ylabel(f'{y} (promedio)')
+                ax.set_xlabel(x)
+            else:
+                continue  # Si el tipo no es válido, ignora
+
+            plt.tight_layout()
+            buf = BytesIO()
+            plt.savefig(buf, format='png', dpi=100)  # ✔️ DPI adicional
+            plt.close(fig)
+            grafico_url = 'data:image/png;base64,' + base64.b64encode(buf.getvalue()).decode()
+            buf.close()
+
+            graficos.append(grafico_url)
+
+        if not graficos:
+            raise ValueError("No se generaron gráficos. Verifique los datos.")
+
+    except Exception as e:
+        error = str(e)
+
+    context = {
+        'archivo': archivo,
+        'columnas': columnas_permitidas,  # ✔️ Solo columnas numéricas
+        'graficos': graficos,
+        'error': error,
+        'x_seleccionada': x,
+        'tipo': tipo,
+    }
+
+    if request.headers.get('x-requested-with') == 'XMLHttpRequest':
+        html = render_to_string('partials/fragmento_grafica.html', context)
+        return JsonResponse({'html': html})
+
+    return render(request, 'temp_ver_analisis_grafico.html', context)
+
+
+@login_required
+def comparacion_graficos(request, id):
+    archivo = get_object_or_404(ArchivoSubido, id=id)
+    df = pd.read_csv(archivo.archivo.path, sep=';', on_bad_lines='skip')
+    columnas = df.columns.tolist()
+
+    x1 = request.GET.get('x1')
+    y1 = request.GET.get('y1')
+    tipo1 = request.GET.get('tipo1', 'line')
+
+    x2 = request.GET.get('x2')
+    y2 = request.GET.get('y2')
+    tipo2 = request.GET.get('tipo2', 'bar')
+
+    graficos = []
+    error = None
+
+    try:
+        for x, y, tipo in [(x1, y1, tipo1), (x2, y2, tipo2)]:
+            fig, ax = plt.subplots()
+            if tipo == 'line':
+                df.plot.line(x=x, y=y, ax=ax)
+            elif tipo == 'bar':
+                df.dropna(subset=[x, y]).groupby(x)[y].mean().plot(kind='bar', ax=ax)
+            elif tipo == 'box':
+                df[[y]].dropna().plot.box(ax=ax)
+            elif tipo == 'pie':
+                conteo = df[y].value_counts().head(10)
+                ax.pie(conteo, labels=conteo.index, autopct='%1.1f%%')
+                ax.set_ylabel("")
+            else:
+                raise ValueError("Tipo de gráfico no válido")
+
+            buf = BytesIO()
+            plt.tight_layout()
+            plt.savefig(buf, format='png')
+            plt.close(fig)
+            img_url = 'data:image/png;base64,' + base64.b64encode(buf.getvalue()).decode()
+            buf.close()
+            graficos.append(img_url)
+
+    except Exception as e:
+        error = str(e)
+
+    context = {
+        'archivo': archivo,
+        'columnas': columnas,
+        'grafico1': graficos[0] if len(graficos) > 0 else None,
+        'grafico2': graficos[1] if len(graficos) > 1 else None,
+        'x1': x1, 'y1': y1, 'tipo1': tipo1,
+        'x2': x2, 'y2': y2, 'tipo2': tipo2,
+        'error': error,
+    }
+
+    return render(request, 'comparacion_graficos.html', context)
+
+
+@login_required
+def graficos_avanzados(request, id):
+    archivo = get_object_or_404(ArchivoSubido, id=id)
+    df = pd.read_csv(archivo.archivo.path, sep=';', on_bad_lines='skip')
+    
+    # ✅ Filtrar columnas para quitar las de texto (object/string)
+    columnas_texto = df.select_dtypes(include=['object', 'string']).columns.tolist()
+    columnas_permitidas = [col for col in df.columns if col not in columnas_texto]
+
+    modo = request.GET.get('modo')  # descripcion, comparacion, tendencia
+    x = request.GET.get('x')
+    y1 = request.GET.get('y1')
+    y2 = request.GET.get('y2')
 
     grafico_url = None
     error = None
@@ -418,34 +607,35 @@ def temp_analisis_grafico(request, id):
     try:
         fig, ax = plt.subplots()
 
-        # Convertir datos a numéricos si aplica
-        if y in df.columns:
-            df[y] = pd.to_numeric(df[y], errors='coerce')
-        if x in df.columns:
+        if modo == 'descripcion' and y1 in df.columns:
+            df[y1] = pd.to_numeric(df[y1], errors='coerce')
+            df[y1].dropna().plot.hist(ax=ax, bins=30, color='skyblue')
+            ax.set_title(f"Histograma de {y1}")
+
+        elif modo == 'comparacion' and x in df.columns and y1 in df.columns and y2 in df.columns:
             df[x] = pd.to_numeric(df[x], errors='coerce')
+            df[y1] = pd.to_numeric(df[y1], errors='coerce')
+            df[y2] = pd.to_numeric(df[y2], errors='coerce')
+            df.dropna(subset=[x, y1, y2]).plot(x=x, y=[y1, y2], ax=ax)
+            ax.set_title(f"Comparación entre {y1} y {y2} respecto a {x}")
 
-        if tipo == 'scatter' and x and y:
-            df.plot.scatter(x=x, y=y, ax=ax)
+        elif modo == 'boxplot' and y1 in df.columns:
+            df[y1] = pd.to_numeric(df[y1], errors='coerce')
+            df[[y1]].dropna().plot.box(ax=ax)
+            ax.set_title(f"Boxplot de {y1}")
 
-        elif tipo == 'line' and x and y:
-            df.dropna(subset=[x, y]).plot.line(x=x, y=y, ax=ax)
-
-        elif tipo == 'bar' and x and y:
-            df.dropna(subset=[x, y]).groupby(x)[y].mean().plot(kind='bar', ax=ax)
-
-        elif tipo == 'hist' and y:
-            df[y].dropna().plot.hist(ax=ax, bins=30)
-
-        elif tipo == 'box' and y:
-            df[[y]].dropna().plot.box(ax=ax)
-
-        elif tipo == 'pie' and y:
-            conteo = df[y].value_counts().head(10)
-            ax.pie(conteo, labels=conteo.index, autopct='%1.1f%%')
-            ax.set_ylabel("")  # Para que no se muestre 'y' como título lateral
+        elif modo == 'tendencia' and x in df.columns and y1 in df.columns and y2 in df.columns:
+            df[x] = pd.to_datetime(df[x], errors='coerce')
+            df[y1] = pd.to_numeric(df[y1], errors='coerce')
+            df[y2] = pd.to_numeric(df[y2], errors='coerce')
+            df = df.dropna(subset=[x, y1, y2]).sort_values(x)
+            ax.plot(df[x], df[y1], label=y1)
+            ax.plot(df[x], df[y2], label=y2)
+            ax.set_title(f"Tendencia: {y1} vs {y2} sobre {x}")
+            ax.legend()
 
         else:
-            raise ValueError("Tipo de gráfico no válido o columnas no seleccionadas")
+            raise ValueError("Parámetros insuficientes o incorrectos")
 
         buf = BytesIO()
         plt.tight_layout()
@@ -459,19 +649,40 @@ def temp_analisis_grafico(request, id):
 
     context = {
         'archivo': archivo,
-        'columnas': columnas,
+        'columnas': columnas_permitidas,  # ✔️ Solo columnas numéricas o convertibles
         'grafico_url': grafico_url,
         'error': error,
-        'x_seleccionada': x,
-        'y_seleccionada': y,
-        'tipo': tipo,
+        'modo': modo,
+        'x': x,
+        'y1': y1,
+        'y2': y2
     }
 
     if request.headers.get('x-requested-with') == 'XMLHttpRequest':
-        html = render_to_string('partials/fragmento_analisis_grafica.html', context)
+        html = render_to_string('partials/fragmento_grafico_avanzado.html', context)
         return JsonResponse({'html': html})
 
-    return render(request, 'temp_ver_analisis_grafico.html', context)
+    return render(request, 'graficos_avanzados.html', context)
+
+@login_required
+def vista_procesamiento_archivos(request, id):
+    archivo = get_object_or_404(ArchivoSubido, id=id)
+    return render(request, 'modificar_separadores.html', {'archivo': archivo})
+
+
+@login_required
+def procesamiento_archivos(request, id):
+    archivo = get_object_or_404(ArchivoSubido, id=id)
+    filepath = archivo.archivo.path
+
+    try:
+        df = pd.read_csv(filepath, sep=';', on_bad_lines='skip', dtype=str)  # Todo como texto
+        for col in df.columns:
+            df[col] = df[col].astype(str).str.replace(',', '.', regex=False)  # Reemplazar comas por puntos
+        df.to_csv(filepath, sep=';', index=False)  # Sobrescribe el archivo
+        return JsonResponse({'success': True, 'message': 'Archivo modificado correctamente.'})
+    except Exception as e:
+        return JsonResponse({'success': False, 'message': str(e)})
 
 @login_required
 def ver_graficos_columnas(request, id):

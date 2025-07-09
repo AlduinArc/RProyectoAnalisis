@@ -20,8 +20,11 @@ urlpatterns = [
     path('eliminar/<int:archivo_id>/', views.eliminar_archivo, name='eliminar_archivo'),
     path('analisis_grafico/<int:id>/', views.analisis_grafico, name='analisis_grafico'),
     path('graficos_columnas/<int:id>/', views.ver_graficos_columnas, name='ver_graficos_columnas'),
-
+    path('graficos_avanzados/<int:id>/', views.graficos_avanzados, name='graficos_avanzados'), # Nueva ruta para gráficos avanzados
     path('temp_analisis_grafico/<int:id>/', views.temp_analisis_grafico, name='temp_analisis_grafico'),
+    path('modificar_separadores/<int:id>/', views.procesamiento_archivos, name='modificar_separadores'),
+    path('modificar_separadores/vista/<int:id>/', views.vista_procesamiento_archivos, name='vista_modificar_separadores'),
     path('grafica/<int:id>/', views.ver_grafica, name='ver_grafica'),
+
     
 ]

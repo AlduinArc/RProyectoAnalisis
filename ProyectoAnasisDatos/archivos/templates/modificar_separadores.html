@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Modificar separadores - {{ archivo.nombre }}</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+</head>
+<body class="bg-light">
+
+<div class="container mt-5">
+    <h2 class="mb-4">Modificar separadores del archivo: <strong>{{ archivo.nombre }}</strong></h2>
+
+    <div class="alert alert-info">
+        Este proceso reemplazará <strong>todas las comas (",")</strong> por <strong>puntos (".")</strong> en las columnas del archivo.
+    </div>
+
+    <button id="btn-modificar" class="btn btn-warning mb-3">
+        Aplicar estandarización
+    </button>
+
+    <div id="resultado-modificacion"></div>
+
+    <a href="{% url 'temp_analisis_grafico' archivo.id %}" class="btn btn-secondary mt-3">
+        ← Volver al análisis gráfico
+    </a>
+</div>
+
+<script>
+$(document).ready(function() {
+    $('#btn-modificar').on('click', function() {
+        if (!confirm("¿Estás seguro de que deseas modificar el archivo? Este cambio es irreversible.")) {
+            return;
+        }
+
+        $.ajax({
+            url: "{% url 'modificar_separadores' archivo.id %}",
+            type: 'POST',
+            headers: { 'X-CSRFToken': '{{ csrf_token }}' },
+            success: function(response) {
+                let tipo = response.success ? 'success' : 'danger';
+                $('#resultado-modificacion').html(
+                    `<div class="alert alert-${tipo}">${response.message}</div>`
+                );
+            },
+            error: function(xhr, status, error) {
+                $('#resultado-modificacion').html(
+                    `<div class="alert alert-danger">Error al modificar el archivo: ${error}</div>`
+                );
+            }
+        });
+    });
+});
+</script>
+
+</body>
+</html>

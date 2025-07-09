@@ -1,0 +1,11 @@
+{% if grafico_url %}
+    <img src="{{ grafico_url }}" class="img-fluid border rounded shadow" alt="Gráfico generado">
+{% elif error %}
+    <div class="alert alert-danger">
+        {{ error }}
+    </div>
+{% else %}
+    <div class="alert alert-warning">
+        No se pudo generar el gráfico. Verifica las columnas seleccionadas.
+    </div>
+{% endif %}

@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Gráficos avanzados - {{ archivo.nombre }}</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+</head>
+<body class="bg-light">
+
+<div class="container mt-3">
+    <a href="{% url 'interfaz' %}" class="btn btn-secondary">← Volver al inicio</a>
+</div>
+
+<div class="container mt-4">
+    <h2>Gráficos avanzados de: <strong>{{ archivo.nombre }}</strong></h2>
+
+    <!-- Selección de modo de gráfico -->
+    <form id="grafico-form" class="row g-3 align-items-end mt-4">
+        <div class="col-md-4">
+            <label class="form-label">Tipo de gráfico</label>
+            <select name="modo" id="modo" class="form-select">
+                <option value="">-- Selecciona --</option>
+                <option value="descripcion" {% if modo == 'descripcion' %}selected{% endif %}>Descripción (Histograma)</option>
+                <option value="comparacion" {% if modo == 'comparacion' %}selected{% endif %}>Comparación (2 variables)</option>
+                <option value="tendencia" {% if modo == 'tendencia' %}selected{% endif %}>Tendencia (tiempo)</option>
+                <option value="boxplot" {% if modo == 'boxplot' %}selected{% endif %}>Boxplot (Distribución)</option>
+
+            </select>
+        </div>
+
+        <div class="col-md-4">
+            <label class="form-label">Eje X (si aplica)</label>
+            <select name="x" id="x" class="form-select">
+                <option value="">-- Selecciona X --</option>
+                {% for col in columnas %}
+                    <option value="{{ col }}" {% if x == col %}selected{% endif %}>{{ col }}</option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <div class="col-md-4">
+            <label class="form-label">Variable Y1</label>
+            <select name="y1" id="y1" class="form-select">
+                <option value="">-- Selecciona Y1 --</option>
+                {% for col in columnas %}
+                    <option value="{{ col }}" {% if y1 == col %}selected{% endif %}>{{ col }}</option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <div class="col-md-4">
+            <label class="form-label">Variable Y2 (si aplica)</label>
+            <select name="y2" id="y2" class="form-select">
+                <option value="">-- Selecciona Y2 --</option>
+                {% for col in columnas %}
+                    <option value="{{ col }}" {% if y2 == col %}selected{% endif %}>{{ col }}</option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <div class="col-md-2">
+            <button type="submit" class="btn btn-primary w-100">Generar gráfico</button>
+        </div>
+    </form>
+
+    <hr>
+
+    <div id="contenedor-grafico-avanzado" class="mt-4">
+        {% if grafico_url %}
+            <img src="{{ grafico_url }}" class="img-fluid border rounded shadow" alt="Gráfico generado">
+        {% elif error %}
+            <div class="alert alert-danger">{{ error }}</div>
+        {% endif %}
+    </div>
+</div>
+
+<script>
+$(document).ready(function () {
+    $('#grafico-form').on('submit', function (e) {
+        e.preventDefault();
+
+        $('#contenedor-grafico-avanzado').html('<div class="text-center"><div class="spinner-border text-primary" role="status"><span class="visually-hidden">Cargando...</span></div></div>');
+
+        let formData = $(this).serialize();
+        let url = window.location.pathname + '?' + formData;
+
+        $.ajax({
+            url: url,
+            type: 'GET',
+            dataType: 'json',
+            headers: {'X-Requested-With': 'XMLHttpRequest'},
+            success: function (response) {
+                if (response.html) {
+                    $('#contenedor-grafico-avanzado').html(response.html);
+                } else {
+                    $('#contenedor-grafico-avanzado').html('<div class="alert alert-warning">No se pudo cargar el gráfico.</div>');
+                }
+            },
+            error: function (xhr, status, error) {
+                $('#contenedor-grafico-avanzado').html('<div class="alert alert-danger">Error: ' + error + '</div>');
+            }
+        });
+    });
+});
+</script>
+
+</body>
+</html>
