@@ -52,10 +52,10 @@
                 url = `/ver/${id}/`;
             } else if (button.id === "btn-procesar") {
                 if (!id) return alert("Debes seleccionar un archivo primero.");
-                url = `/modificar_separadores/vista/${id}/`;
+                url = `/interfaz_procesamiento/${id}/`;
             } else if (button.id === "btn-modelar") {
                 if (!id) return alert("Debes seleccionar un archivo primero.");
-                url = `/grafica/${id}/`;
+                url = `/interfaz_modelado/${id}/`;
             }
 
             fetch(url)

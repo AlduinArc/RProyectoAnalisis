@@ -1,5 +1,6 @@
 # Standard Library
 import os
+import io
 import uuid
 import mimetypes
 from io import BytesIO
@@ -11,11 +12,22 @@ matplotlib.use('Agg')  # Configuración para evitar conflictos con GUI
 import matplotlib.pyplot as plt
 from PIL import Image  # Para procesamiento de imágenes
 import base64
+import json
+import plotly.graph_objs as go
+import seaborn as sns
+
+
+# Django modeling
+from sklearn.model_selection import train_test_split
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.metrics import mean_squared_error, r2_score, accuracy_score
+from sklearn.ensemble import RandomForestClassifier
 
 # Django Core
 from django.shortcuts import render, redirect, get_object_or_404
 from django.conf import settings
-from django.http import JsonResponse, FileResponse, HttpResponse
+from django.http import JsonResponse, FileResponse, HttpResponse, HttpResponseRedirect
+from django.urls import reverse
 from django.template.loader import render_to_string
 from django.contrib import messages
 from django.contrib.auth import authenticate, login as auth_login
@@ -35,6 +47,7 @@ from .models import ArchivoSubido
 from .forms import ArchivoForm
 from django.contrib.auth.decorators import user_passes_test
 from django.contrib.auth import logout
+
 
 def superuser_check(user):
     return user.is_superuser
@@ -714,8 +727,448 @@ def ver_graficos_columnas(request, id):
         'imagenes': imagenes_urls
     })
 
+@login_required
+def ver_columnas_nulas(request, id):
+    archivo = get_object_or_404(ArchivoSubido, id=id)
+    ruta = os.path.join(settings.MEDIA_ROOT, archivo.archivo.name)
+    
+    df = pd.read_csv(ruta)
+    columnas_nulas = df.columns[df.isnull().any()].tolist()
+
+    conteo_nulos = df.isnull().sum()
+    conteo_nulos = conteo_nulos[conteo_nulos > 0]
+
+    grafico_base64 = None
+
+    if not conteo_nulos.empty:
+        fig, ax = plt.subplots()
+        conteo_nulos.plot(kind='bar', ax=ax, color='orange')
+        ax.set_title('Valores nulos por columna')
+        ax.set_ylabel('Cantidad de NaN')
+        plt.xticks(rotation=45, ha='right')
+
+        buffer = BytesIO()
+        plt.tight_layout()
+        plt.savefig(buffer, format='png')
+        buffer.seek(0)
+        grafico_base64 = base64.b64encode(buffer.read()).decode()
+        plt.close()
+
+    context = {
+        'archivo_id': id,
+        'columnas_nulas': columnas_nulas,
+        'grafico': f"data:image/png;base64,{grafico_base64}" if grafico_base64 else None,
+    }
+
+    return render(request, 'ver_columnas_nulas.html', context)
+
+
+
+@require_POST
+def confirmar_eliminacion_columnas_nulas(request, id):
+    archivo = get_object_or_404(ArchivoSubido, id=id)
+    ruta = os.path.join(settings.MEDIA_ROOT, archivo.archivo.name)
+
+    df = pd.read_csv(ruta)
+
+    # Eliminar columnas con al menos un NaN usando NumPy
+    columnas_con_nan = df.columns[df.isnull().any()]
+    df = df.drop(columns=columnas_con_nan)
+
+    df.to_csv(ruta, index=False)  # Guardar los cambios
+
+    return redirect('ver_archivo', archivo_id=id)
 
 @login_required
+def eliminar_columnas_ceros(request, id):
+    archivo = get_object_or_404(ArchivoSubido, id=id)
+    ruta = archivo.archivo.path
+    df = pd.read_csv(ruta, delimiter=';', on_bad_lines='skip')
+
+    # Guardamos el dataframe original (para graficar antes)
+    df_original = df.copy()
+
+    # Contamos las columnas con solo ceros
+    columnas_con_ceros = [col for col in df.columns if df[col].dtype != 'object' and (df[col] == 0).all()]
+    cantidad_columnas_eliminadas = len(columnas_con_ceros)
+
+    # Eliminamos esas columnas
+    df.drop(columns=columnas_con_ceros, inplace=True)
+
+    # Sobrescribimos el archivo CSV (eliminación permanente)
+    df.to_csv(ruta, index=False, sep=';')
+
+    # Generamos gráfico de tendencia antes y después
+    fig = go.Figure()
+
+    fig.add_trace(go.Scatter(
+        y=[df_original.shape[1]],
+        x=["Antes"],
+        name="Columnas antes",
+        mode="lines+markers",
+        line=dict(color="red")
+    ))
+
+    fig.add_trace(go.Scatter(
+        y=[df.shape[1]],
+        x=["Después"],
+        name="Columnas después",
+        mode="lines+markers",
+        line=dict(color="green")
+    ))
+
+    grafico_html = fig.to_html(full_html=False)
+
+    return render(request, 'eliminar_columnas_ceros.html', {
+        'archivo': archivo,
+        'cant_columnas_eliminadas': cantidad_columnas_eliminadas,
+        'grafico_html': grafico_html
+    })
+
+@login_required
+def Test_graficos(request, id):
+    archivo = get_object_or_404(ArchivoSubido, id=id)
+    df = pd.read_csv(archivo.archivo.path, sep=';', on_bad_lines='skip')
+
+    # ✅ Filtrar columnas numéricas
+    columnas_texto = df.select_dtypes(include=['object', 'string']).columns.tolist()
+    columnas_permitidas = [col for col in df.columns if col not in columnas_texto]
+
+    x = request.GET.get('x')
+    ys = request.GET.getlist('y')
+    tipo = request.GET.get('tipo', 'line')
+
+    graficos = []
+    error = None
+
+    if x and ys:
+        try:
+            for y in ys:
+                if y not in df.columns or x not in df.columns:
+                    continue
+
+                fig, ax = plt.subplots()
+                fig.set_size_inches(6, 4)
+
+                # Asegurar que son numéricos
+                df[x] = pd.to_numeric(df[x], errors='coerce')
+                df[y] = pd.to_numeric(df[y], errors='coerce')
+                df_filtrado = df.dropna(subset=[x, y])
+
+                if tipo == 'line':
+                    df_filtrado = df_filtrado.sort_values(by=x)
+                    ax.plot(df_filtrado[x], df_filtrado[y], marker='o')
+                    ax.set_title(f'Tendencia: {y} sobre {x}')
+                elif tipo == 'scatter':
+                    ax.scatter(df_filtrado[x], df_filtrado[y])
+                    ax.set_title(f'Dispersión: {y} vs {x}')
+                elif tipo == 'bar':
+                    resumen = df_filtrado.groupby(x)[y].mean().sort_values(ascending=False).head(15)
+                    resumen.plot(kind='bar', ax=ax, color='skyblue')
+                    ax.set_title(f'Promedio de {y} por {x}')
+                    ax.set_ylabel(f'{y} (promedio)')
+                    ax.set_xlabel(x)
+                else:
+                    continue
+
+                plt.tight_layout()
+                buf = BytesIO()
+                plt.savefig(buf, format='png', dpi=100)
+                grafico_url = 'data:image/png;base64,' + base64.b64encode(buf.getvalue()).decode()
+                buf.close()
+                plt.close(fig)
+
+                graficos.append(grafico_url)
+
+            if not graficos:
+                raise ValueError("No se generaron gráficos. Verifique los datos seleccionados.")
+
+        except Exception as e:
+            error = str(e)
+
+    context = {
+        'graficos': graficos,
+        'error': error,
+    }
+
+    # ✅ AJAX: devolver solo el fragmento HTML para insertar en el modal
+    if request.headers.get('x-requested-with') == 'XMLHttpRequest':
+        html = render_to_string('partials/fragmento_test.html', context)
+        return JsonResponse({'html': html})
+
+    # ✅ Render normal (si se carga directamente la URL sin AJAX)
+    context.update({
+        'archivo': archivo,
+        'columnas': columnas_permitidas,
+        'x_seleccionada': x,
+        'tipo': tipo,
+    })
+    return render(request, 'Test_graficos.html', context)
+
+
+# Función auxiliar para guardar nuevo archivo
+def guardar_archivo_modificado(df, archivo, sufijo):
+    import pandas as pd
+    import os
+    from django.conf import settings
+
+    nuevo_nombre = f"{os.path.splitext(archivo.nombre)[0]}_{sufijo}.csv"
+    nueva_ruta_absoluta = os.path.join(settings.MEDIA_ROOT, 'uploads', nuevo_nombre)
+    
+    # Usa el mismo delimitador que el archivo original (probablemente ; o ,)
+    df.to_csv(nueva_ruta_absoluta, index=False, sep=';')  # <== usa sep=';' si así fue leído
+
+    return nuevo_nombre
+
+
+
+
+def filtro_valores(request, id):
+    archivo = get_object_or_404(ArchivoSubido, id=id)
+    ruta = archivo.archivo.path
+    df = pd.read_csv(ruta, sep=None, engine='python', on_bad_lines='skip')
+
+    columnas = request.POST.getlist("columnas")
+
+    valor = request.POST.get('valor')
+    try:
+        valor = float(valor)
+        df_filtrado = df[df[columnas] != valor]
+        nuevo = guardar_archivo_modificado(df_filtrado, archivo, f"filtro_{columnas}_{valor}")
+        return HttpResponseRedirect(reverse('interfaz_procesamiento', args=[id]))
+    except:
+        return HttpResponseRedirect(reverse('interfaz_procesamiento', args=[id]))
+
+
+def aplicar_abs(request, id):
+    archivo = get_object_or_404(ArchivoSubido, id=id)
+    ruta = archivo.archivo.path
+    df = pd.read_csv(ruta, sep=None, engine='python', on_bad_lines='skip')
+
+    columnas = request.POST.getlist("columnas")
+
+    df[columnas] = df[columnas].abs()
+    nuevo = guardar_archivo_modificado(df, archivo, f"{columnas}_abs")
+    return HttpResponseRedirect(reverse('interfaz_procesamiento', args=[id]))
+
+
+def aplicar_normalizacion(request, id):
+    archivo = get_object_or_404(ArchivoSubido, id=id)
+    ruta = archivo.archivo.path
+    df = pd.read_csv(ruta, sep=None, engine='python', on_bad_lines='skip')
+
+    columnas = request.POST.getlist("columnas")
+
+    col_data = df[columnas]
+    df[columnas] = (col_data - col_data.min()) / (col_data.max() - col_data.min())
+    nuevo = guardar_archivo_modificado(df, archivo, f"{columnas}_norm")
+    return HttpResponseRedirect(reverse('interfaz_procesamiento', args=[id]))
+
+import traceback
+
+
+
+
+
+@login_required
+def interfaz_procesamiento(request, id):
+    archivo = get_object_or_404(ArchivoSubido, id=id)
+    ruta = archivo.archivo.path
+
+    # Leer archivo y eliminar filas completamente vacías
+    df = pd.read_csv(ruta, sep=None, engine='python', on_bad_lines='skip')
+    df.dropna(how='all', inplace=True)
+
+    columnas = df.columns.tolist()
+    columnas_numericas = df.select_dtypes(include='number').columns.tolist()
+    
+
+    boxplot = generar_boxplot(df)
+    tendencia = generar_tendencia(df)
+    comparativo_boxplot = None
+
+    mensaje = None
+    nuevo_archivo = None
+
+
+    # === Nuevo bloque: genera comparativo automáticamente si el archivo es modificado ===
+    if "_" in archivo.nombre:  # Parece un archivo modificado
+        try:
+            # Obtener el nombre del archivo original
+            nombre_original = archivo.nombre.split('_')[0] + ".csv"
+            ruta_original = os.path.join(settings.MEDIA_ROOT, 'uploads', nombre_original)
+
+            if os.path.exists(ruta_original):
+                df_original = pd.read_csv(ruta_original, sep=None, engine='python', on_bad_lines='skip')
+                df_original.dropna(how='all', inplace=True)
+
+                # Generar el boxplot del archivo original
+                comparativo_boxplot = generar_boxplot(df_original)
+        except Exception as e:
+            print("[ERROR] Al generar boxplot del archivo original:", e)
+
+
+    if request.method == 'POST':
+            columnas = request.POST.getlist("columnas")
+            operacion = request.POST.get('operacion')
+            valor_personalizado = request.POST.get('valor_personalizado')
+
+            df_filtrado = df.copy()
+            sufijos = []
+
+            if operacion == "eliminar_negativos":
+                for col in columnas:
+                    if (df_filtrado[col] < 0).any():
+                        df_filtrado = df_filtrado[df_filtrado[col] >= 0]
+                sufijos.append("sin_negativos")
+
+            elif operacion == "eliminar_ceros":
+                for col in columnas:
+                    if (df_filtrado[col] == 0).any():
+                        df_filtrado = df_filtrado[df_filtrado[col] != 0]
+                sufijos.append("sin_ceros")
+
+            elif operacion == "eliminar_nulos":
+                for col in columnas:
+                    if df_filtrado[col].isnull().any():
+                        df_filtrado = df_filtrado[df_filtrado[col].notnull()]
+                sufijos.append("sin_nulos")
+
+            elif operacion == "valor_personalizado" and valor_personalizado:
+                try:
+                    valor = float(valor_personalizado)
+                    for col in columnas:
+                        df_filtrado = df_filtrado[df_filtrado[col] != valor]
+                    sufijos.append(f"sin_{valor}")
+                except ValueError:
+                    mensaje = "Valor personalizado inválido."
+
+            elif operacion == "abs":
+                df_filtrado[columnas] = df_filtrado[columnas].abs()
+                sufijos.append("abs")
+
+            elif operacion == "normalizar":
+                for col in columnas:
+                    max_val = df_filtrado[col].max()
+                    min_val = df_filtrado[col].min()
+                    if max_val != min_val:
+                        df_filtrado[col] = (df_filtrado[col] - min_val) / (max_val - min_val)
+                    else:
+                        mensaje = f"No se puede normalizar columna {col}: max y min son iguales."
+                sufijos.append("norm")
+
+            # Guardar nuevo archivo solo si no hay errores
+            if not mensaje:
+                nuevo_nombre = guardar_archivo_modificado(
+                    df_filtrado, archivo, '_'.join(sufijos) + '_' + uuid.uuid4().hex[:6]
+                )
+                nuevo_archivo = ArchivoSubido(nombre=nuevo_nombre, archivo=os.path.join('uploads', nuevo_nombre))
+                nuevo_archivo.save()
+                mensaje = f"Operación aplicada. Nuevo archivo: {nuevo_archivo.nombre}"
+                
+
+
+
+    context = {
+        'archivo': archivo,
+        'columnas': columnas,
+        'columnas_numericas': columnas_numericas,
+        'boxplot': boxplot,
+        'tendencia': tendencia,
+        'mensaje': mensaje,
+        'nuevo_archivo': nuevo_archivo,
+        'comparativo_boxplot': comparativo_boxplot,
+    }
+    return render(request, 'interfaz_procesamiento.html', context)
+
+
+def generar_boxplot(df):
+    try:
+        # Filtrar solo columnas numéricas para el boxplot
+        df_numerico = df.select_dtypes(include='number')
+
+        if df_numerico.empty:
+            return None  # No hay columnas numéricas para graficar
+
+        plt.figure(figsize=(10, 5))
+        sns.boxplot(data=df_numerico)
+        plt.xticks(rotation=45)
+        plt.tight_layout()
+
+        buffer = io.BytesIO()
+        plt.savefig(buffer, format='png')
+        buffer.seek(0)
+        image_png = buffer.getvalue()
+        buffer.close()
+        plt.close()
+
+        graphic = base64.b64encode(image_png)
+        graphic = graphic.decode('utf-8')
+
+        return graphic
+    except Exception as e:
+        print(f"Error generando boxplot: {e}")
+        return None
+
+def generar_tendencia(df):
+    df_numerico = df.select_dtypes(include='number')
+
+    if df_numerico.empty:
+        return None
+
+    plt.figure(figsize=(10, 4))
+    df_numerico.plot(ax=plt.gca())
+    plt.xlabel('Índice')
+    plt.ylabel('Valores')
+    plt.title('Tendencia')
+    plt.tight_layout()
+
+    buffer = BytesIO()
+    plt.savefig(buffer, format='png')
+    plt.close()
+    buffer.seek(0)
+    imagen_base64 = base64.b64encode(buffer.read()).decode('utf-8')
+    return imagen_base64
+
+
+@login_required
+def interfaz_modelado(request, id):
+    archivo = get_object_or_404(ArchivoSubido, id=id)
+    df = pd.read_csv(archivo.archivo.path, sep=';', on_bad_lines='skip')
+    columnas_numericas = df.select_dtypes(include='number').columns.tolist()
+
+    y = request.GET.get('y')
+    resumen = None
+
+    if y and y in columnas_numericas:
+        X = df.drop(columns=[y]).select_dtypes(include='number')
+        y_data = df[y]
+
+        X = X.dropna()
+        y_data = y_data.loc[X.index]
+
+        if not X.empty and not y_data.empty:
+            model = RandomForestRegressor(n_estimators=100, random_state=42)
+            model.fit(X, y_data)
+            importancias = model.feature_importances_
+
+            resumen = pd.DataFrame({
+                'Variable': X.columns,
+                'Importancia': importancias
+            }).sort_values(by='Importancia', ascending=False)
+
+    # 👉 AJAX: devuelve fragmento
+    if request.headers.get('x-requested-with') == 'XMLHttpRequest':
+        html = render_to_string('partials/fragmento_modelado.html', {'resumen': resumen})
+        return JsonResponse({'html': html})
+
+    # 👉 Normal: carga inicial
+    return render(request, 'interfaz_modelado.html', {
+        'archivo': archivo,
+        'columnas': columnas_numericas,
+    })
+
+
 def eliminar_archivo(request, archivo_id):
     archivo = get_object_or_404(ArchivoSubido, pk=archivo_id)
     archivo_path = os.path.join(settings.MEDIA_ROOT, archivo.archivo.name)

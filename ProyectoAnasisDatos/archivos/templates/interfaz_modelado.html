@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Modelado con RandomForest - {{ archivo.nombre }}</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+</head>
+<body class="bg-light">
+<div class="container mt-4">
+    <h2 class="mb-4">Modelado con RandomForest - <strong>{{ archivo.nombre }}</strong></h2>
+
+    <form id="form-modelado" method="get" class="row g-3 align-items-end mb-4">
+        <div class="col-md-6">
+            <label for="y" class="form-label">Seleccionar variable Y (dependiente)</label>
+            <select name="y" id="y" class="form-select" required>
+                {% for col in columnas %}
+                    <option value="{{ col }}">{{ col }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="col-md-2">
+            <button type="submit" class="btn btn-primary w-100">Modelar</button>
+        </div>
+    </form>
+
+    <!-- Contenedor donde se carga el fragmento -->
+    <div id="resultado-modelado" class="mt-4">
+        {% include 'partials/fragmento_modelado.html' %}
+    </div>
+</div>
+
+<!-- Script con delegación de eventos -->
+<script>
+$(document).ready(function () {
+    // Delegación para formularios cargados dinámicamente
+    $(document).on('submit', '#form-modelado', function (e) {
+        e.preventDefault(); // ⛔️ Evita el envío normal
+
+        let formData = $(this).serialize();
+        let url = window.location.pathname + '?' + formData;
+
+        $('#resultado-modelado').html('<div class="text-center text-secondary">Procesando modelo...</div>');
+
+        $.ajax({
+            url: url,
+            type: 'GET',
+            dataType: 'json',
+            headers: { 'X-Requested-With': 'XMLHttpRequest' },
+            success: function (response) {
+                if (response.html) {
+                    $('#resultado-modelado').html(response.html);
+                } else {
+                    $('#resultado-modelado').html('<div class="alert alert-warning">No se pudo generar el modelo.</div>');
+                }
+            },
+            error: function () {
+                $('#resultado-modelado').html('<div class="alert alert-danger">Error al generar el modelo.</div>');
+            }
+        });
+    });
+});
+</script>
+
+</body>
+</html>

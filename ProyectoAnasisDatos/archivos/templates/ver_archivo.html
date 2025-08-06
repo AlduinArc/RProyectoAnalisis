@@ -24,15 +24,14 @@
         </a>
     {% endif %}
     <a href="{% url 'analisis_grafico' archivo.id %}" class="btn btn-dark">
-        Gráficos Avanzados
+        Apartado de Gráficos
     </a>
-    <a href="{% url 'ver_archivo' archivo.id %}?completo=1" class="btn btn-primary me-2">
-            Ver tabla completa
-        </a>
+    
 
-    <a href="{% url 'vista_modificar_separadores' archivo.id %}" class="btn btn-success">
-        Modificar Archivo
+    <a href="{% url 'test_graficos' archivo.id %}" class="btn btn-success">
+        Test Gráficos
     </a>
+    
 
 </div>
 

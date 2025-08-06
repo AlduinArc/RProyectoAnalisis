@@ -1,0 +1,104 @@
+{% load static %}
+{% block content %}
+<div class="container mt-5">
+    <h2 class="mb-4 text-center">Procesamiento de archivo: {{ archivo.nombre }}</h2>
+
+    <form method="post" action="{% url 'interfaz_procesamiento' archivo.id %}">
+        {% csrf_token %}
+
+        <div class="row">
+            <!-- Filtros -->
+            <div class="col-md-6 mb-4">
+                <div class="card">
+                    <div class="card-header bg-primary text-white">
+                        Filtros de valores
+                    </div>
+                    <div class="card-body">
+                        <div class="mb-3">
+                            <label for="operacion" class="form-label">Selecciona una operación:</label>
+                            <select name="operacion" id="operacion" class="form-select">
+                                <option value="">-- Selecciona una opción --</option>
+                                <option value="eliminar_negativos">Eliminar negativos</option>
+                                <option value="eliminar_ceros">Eliminar ceros</option>
+                                <option value="eliminar_nulos">Eliminar nulos (NaN)</option>
+                                <option value="eliminar_personalizado">Eliminar valor personalizado</option>
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <label for="valor_personalizado" class="form-label">Valor personalizado (si aplica):</label>
+                            <input type="text" name="valor_personalizado" id="valor_personalizado" class="form-control" placeholder="Ej: 9999">
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+
+            <!-- Operaciones matemáticas -->
+            <div class="col-md-6 mb-4">
+                <div class="card">
+                    <div class="card-header bg-success text-white">
+                        Operaciones por columna
+                    </div>
+                    <div class="card-body">
+                        <div class="form-group mb-3">
+                            <label for="columnas">Selecciona columnas:</label>
+                            <select class="form-select" name="columnas" id="columnas" multiple>
+                                {% for col in columnas %}
+                                    <option value="{{ col }}">{{ col }}</option>
+                                {% endfor %}
+                            </select>
+                            <small class="form-text text-muted">Usa Ctrl o Cmd para seleccionar múltiples columnas.</small>
+                        </div>
+
+                        <div class="form-check mb-2">
+                            <input class="form-check-input" type="radio" name="operacion" id="abs" value="abs">
+                            <label class="form-check-label" for="abs">Aplicar valor absoluto</label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="operacion" id="normalizar" value="normalizar">
+                            <label class="form-check-label" for="normalizar">Normalizar columnas (min-max)</label>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Botones -->
+        <div class="text-center mb-4">
+            <button type="submit" class="btn btn-primary">Aplicar procesamiento</button>
+            <a href="{% url 'interfaz' %}" class="btn btn-secondary">Volver al archivo</a>
+            <a href="{% url 'modificar_separadores' archivo.id %}" class="btn btn-secondary">Cambio de los separadores</a>
+        </div>
+        
+        
+    </form>
+
+    <!-- Gráficos -->
+    <div class="row">
+        <div class="col-md-6">
+            <div class="card mb-4">
+                <div class="card-header">Grafico Original</div>
+                <div class="card-body">
+                    {% if comparativo_boxplot %}
+                        <h4>Boxplot Comparativo</h4>
+                        <img src="data:image/png;base64,{{ comparativo_boxplot }}" class="img-fluid" />
+                    {% else %}
+                        <p>No se pudo generar el boxplot comparativo.</p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        <div class="col-md-6">
+            <div class="card mb-4">
+                <div class="card-header">Gráfico Actual</div>
+                <div class="card-body">
+                    {% if tendencia %}
+                        <h3>Boxplot</h3>
+                        <img src="data:image/png;base64,{{ boxplot }}" class="img-fluid" />
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
