@@ -16,6 +16,10 @@ import json
 import plotly.graph_objs as go
 import seaborn as sns
 
+from sklearn.ensemble import RandomForestRegressor, RandomForestClassifier
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import mean_absolute_error, r2_score
+from sklearn.preprocessing import LabelEncoder
 
 # Django modeling
 from sklearn.model_selection import train_test_split
@@ -1131,42 +1135,326 @@ def generar_tendencia(df):
     return imagen_base64
 
 
-@login_required
 def interfaz_modelado(request, id):
     archivo = get_object_or_404(ArchivoSubido, id=id)
-    df = pd.read_csv(archivo.archivo.path, sep=';', on_bad_lines='skip')
-    columnas_numericas = df.select_dtypes(include='number').columns.tolist()
+    modelo_info = None
+    metricas = None
 
-    y = request.GET.get('y')
-    resumen = None
+    try:
+        df = pd.read_csv(archivo.archivo.path, sep=None, engine='python', on_bad_lines='skip')
+        df.dropna(inplace=True)
+        
+        # Identificar columnas numéricas y categóricas
+        columnas_numericas = df.select_dtypes(include='number').columns.tolist()
+        columnas_categoricas = df.select_dtypes(exclude='number').columns.tolist()
+        
+        # Convertir columnas categóricas si existen
+        if columnas_categoricas:
+            le = LabelEncoder()
+            for col in columnas_categoricas:
+                df[col] = le.fit_transform(df[col])
+            columnas_numericas = df.columns.tolist()  # Ahora todas son numéricas
 
-    if y and y in columnas_numericas:
-        X = df.drop(columns=[y]).select_dtypes(include='number')
-        y_data = df[y]
+    except Exception as e:
+        messages.error(request, f"Error al cargar archivo: {e}")
+        return render(request, "interfaz_modelado.html", {
+            "archivo": archivo,
+            "columnas": [],
+            "modelo_info": None,
+            "metricas": None
+        })
 
-        X = X.dropna()
-        y_data = y_data.loc[X.index]
+    if request.method == "POST":
+        columna_objetivo = request.POST.get("columna_objetivo")
+        columnas_predictoras = request.POST.getlist("columnas_predictoras")
+        valor_str = request.POST.get("valor", "").strip()
 
-        if not X.empty and not y_data.empty:
-            model = RandomForestRegressor(n_estimators=100, random_state=42)
-            model.fit(X, y_data)
-            importancias = model.feature_importances_
+        # Validaciones
+        if not columna_objetivo:
+            messages.error(request, "Debes seleccionar una columna objetivo.")
+            return render(request, "interfaz_modelado.html", {
+                "archivo": archivo,
+                "columnas": columnas_numericas,
+                "modelo_info": None,
+                "metricas": None
+            })
 
-            resumen = pd.DataFrame({
-                'Variable': X.columns,
-                'Importancia': importancias
-            }).sort_values(by='Importancia', ascending=False)
+        if not columnas_predictoras:
+            messages.error(request, "Debes seleccionar al menos una columna predictora.")
+            return render(request, "interfaz_modelado.html", {
+                "archivo": archivo,
+                "columnas": columnas_numericas,
+                "modelo_info": None,
+                "metricas": None
+            })
 
-    # 👉 AJAX: devuelve fragmento
-    if request.headers.get('x-requested-with') == 'XMLHttpRequest':
-        html = render_to_string('partials/fragmento_modelado.html', {'resumen': resumen})
-        return JsonResponse({'html': html})
+        if columna_objetivo in columnas_predictoras:
+            messages.error(request, "La columna objetivo no puede estar entre las predictoras.")
+            return render(request, "interfaz_modelado.html", {
+                "archivo": archivo,
+                "columnas": columnas_numericas,
+                "modelo_info": None,
+                "metricas": None
+            })
 
-    # 👉 Normal: carga inicial
-    return render(request, 'interfaz_modelado.html', {
-        'archivo': archivo,
-        'columnas': columnas_numericas,
+        try:
+            # Preparar datos
+            X = df[columnas_predictoras]
+            y = df[columna_objetivo]
+            
+            # Entrenar modelo
+            modelo = RandomForestRegressor(n_estimators=100, random_state=42)
+            X_train, X_test, y_train, y_test = train_test_split(
+                X, y, test_size=0.2, random_state=42
+            )
+            modelo.fit(X_train, y_train)
+            
+            # Calcular métricas
+            y_pred = modelo.predict(X_test)
+            mae = mean_absolute_error(y_test, y_pred)
+            r2 = r2_score(y_test, y_pred)
+            
+            metricas = {
+                'mae': round(mae, 4),
+                'r2': round(r2, 4),
+                'n_estimators': modelo.n_estimators,
+                'features_importances': sorted(
+                    zip(columnas_predictoras, modelo.feature_importances_),
+                    key=lambda x: x[1],
+                    reverse=True
+                )
+            }
+            
+            modelo_info = f"Modelo RandomForest entrenado para predecir '{columna_objetivo}' usando {len(columnas_predictoras)} predictores."
+            
+            # Hacer predicción si se proporcionan valores
+            if valor_str:
+                try:
+                    nuevo_valor = [float(v.strip()) for v in valor_str.split(",")]
+                    if len(nuevo_valor) != len(columnas_predictoras):
+                        messages.error(
+                            request,
+                            f"Debes ingresar {len(columnas_predictoras)} valores separados por coma (uno por cada predictor)."
+                        )
+                    else:
+                        prediccion = modelo.predict([nuevo_valor])[0]
+                        messages.success(
+                            request,
+                            f"Predicción para '{columna_objetivo}': {prediccion:.4f}"
+                        )
+                except ValueError:
+                    messages.error(request, "Los valores de entrada deben ser números separados por comas.")
+                
+        except Exception as e:
+            messages.error(request, f"Error durante el modelado: {str(e)}")
+
+    return render(request, "interfaz_modelado.html", {
+        "archivo": archivo,
+        "columnas": columnas_numericas,
+        "modelo_info": modelo_info,
+        "metricas": metricas
     })
+
+from django.shortcuts import render, get_object_or_404
+from django.contrib import messages
+from django.http import JsonResponse
+import pandas as pd
+import numpy as np
+from sklearn.ensemble import RandomForestRegressor, RandomForestClassifier
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import mean_absolute_error, r2_score, accuracy_score, classification_report
+from sklearn.preprocessing import LabelEncoder
+import json
+from io import StringIO
+
+def prueba_modelado_randomforest(request, id):
+    archivo = get_object_or_404(ArchivoSubido, id=id)
+    modelo_info = None
+    metricas = None
+    df_predicciones = None
+    es_clasificacion = False
+
+    try:
+        df = pd.read_csv(archivo.archivo.path, sep=None, engine='python', on_bad_lines='skip')
+        df.dropna(inplace=True)
+        
+        # Identificar columnas numéricas y categóricas
+        columnas_numericas = df.select_dtypes(include='number').columns.tolist()
+        columnas_categoricas = df.select_dtypes(exclude='number').columns.tolist()
+        
+        # Convertir columnas categóricas si existen
+        label_encoders = {}
+        if columnas_categoricas:
+            for col in columnas_categoricas:
+                le = LabelEncoder()
+                df[col] = le.fit_transform(df[col])
+                label_encoders[col] = le
+            columnas_numericas = df.columns.tolist()  # Ahora todas son numéricas
+
+    except Exception as e:
+        messages.error(request, f"Error al cargar archivo: {e}")
+        return render(request, "prueba_modelado_randomforest.html", {
+            "archivo": archivo,
+            "columnas": [],
+            "modelo_info": None,
+            "metricas": None,
+            "df_predicciones": None
+        })
+
+    if request.method == "POST":
+        columna_objetivo = request.POST.get("columna_objetivo")
+        columnas_predictoras = request.POST.getlist("columnas_predictoras")
+        valor_str = request.POST.get("valor", "").strip()
+        predecir_columna = request.POST.get("predecir_columna") == "on"
+        
+        # Validaciones
+        if not columna_objetivo:
+            messages.error(request, "Debes seleccionar una columna objetivo.")
+            return render(request, "prueba_modelado_randomforest.html", {
+                "archivo": archivo,
+                "columnas": columnas_numericas,
+                "modelo_info": None,
+                "metricas": None,
+                "df_predicciones": None
+            })
+
+        if not columnas_predictoras:
+            messages.error(request, "Debes seleccionar al menos una columna predictora.")
+            return render(request, "prueba_modelado_randomforest.html", {
+                "archivo": archivo,
+                "columnas": columnas_numericas,
+                "modelo_info": None,
+                "metricas": None,
+                "df_predicciones": None
+            })
+
+        if columna_objetivo in columnas_predictoras:
+            messages.error(request, "La columna objetivo no puede estar entre las predictoras.")
+            return render(request, "prueba_modelado_randomforest.html", {
+                "archivo": archivo,
+                "columnas": columnas_numericas,
+                "modelo_info": None,
+                "metricas": None,
+                "df_predicciones": None
+            })
+
+        try:
+            # Preparar datos
+            X = df[columnas_predictoras]
+            y = df[columna_objetivo]
+            
+            # Determinar si es problema de clasificación o regresión
+            # Si la variable objetivo tiene pocos valores únicos, tratamos como clasificación
+            if y.nunique() <= 10 or y.dtype == 'object':
+                es_clasificacion = True
+                modelo = RandomForestClassifier(n_estimators=100, random_state=42)
+            else:
+                modelo = RandomForestRegressor(n_estimators=100, random_state=42)
+            
+            # Entrenar modelo
+            X_train, X_test, y_train, y_test = train_test_split(
+                X, y, test_size=0.2, random_state=42
+            )
+            modelo.fit(X_train, y_train)
+            
+            # Calcular métricas
+            y_pred = modelo.predict(X_test)
+            
+            if es_clasificacion:
+                accuracy = accuracy_score(y_test, y_pred)
+                metricas = {
+                    'accuracy': round(accuracy, 4),
+                    'classification_report': classification_report(y_test, y_pred),
+                    'n_estimators': modelo.n_estimators,
+                    'features_importances': sorted(
+                        zip(columnas_predictoras, modelo.feature_importances_),
+                        key=lambda x: x[1],
+                        reverse=True
+                    ),
+                    'tipo': 'clasificación'
+                }
+            else:
+                mae = mean_absolute_error(y_test, y_pred)
+                r2 = r2_score(y_test, y_pred)
+                metricas = {
+                    'mae': round(mae, 4),
+                    'r2': round(r2, 4),
+                    'n_estimators': modelo.n_estimators,
+                    'features_importances': sorted(
+                        zip(columnas_predictoras, modelo.feature_importances_),
+                        key=lambda x: x[1],
+                        reverse=True
+                    ),
+                    'tipo': 'regresión'
+                }
+            
+            modelo_info = f"Modelo RandomForest entrenado para predecir '{columna_objetivo}' usando {len(columnas_predictoras)} predictores."
+            
+            # Hacer predicción si se proporcionan valores
+            if valor_str:
+                try:
+                    nuevo_valor = [float(v.strip()) for v in valor_str.split(",")]
+                    if len(nuevo_valor) != len(columnas_predictoras):
+                        messages.error(
+                            request,
+                            f"Debes ingresar {len(columnas_predictoras)} valores separados por coma (uno por cada predictor)."
+                        )
+                    else:
+                        prediccion = modelo.predict([nuevo_valor])[0]
+                        messages.success(
+                            request,
+                            f"Predicción para '{columna_objetivo}': {prediccion}"
+                        )
+                except ValueError:
+                    messages.error(request, "Los valores de entrada deben ser números separados por comas.")
+            
+            # Predecir columna completa si se solicita
+            if predecir_columna:
+                # Hacer predicciones para todo el dataset
+                predicciones = modelo.predict(X)
+                
+                # Crear DataFrame con resultados
+                df_predicciones = df.copy()
+                df_predicciones[f'Predicción_{columna_objetivo}'] = predicciones
+                df_predicciones['Error'] = np.abs(y - predicciones) if not es_clasificacion else (y != predicciones).astype(int)
+                
+                # Convertir a HTML para mostrar en la plantilla
+                tabla_predicciones = df_predicciones.to_html(classes='table table-striped table-bordered', index=False)
+                
+                messages.success(request, f"Se han generado predicciones para toda la columna '{columna_objetivo}'.")
+                
+        except Exception as e:
+            messages.error(request, f"Error durante el modelado: {str(e)}")
+
+    return render(request, "prueba_modelado_randomforest.html", {
+        "archivo": archivo,
+        "columnas": columnas_numericas,
+        "modelo_info": modelo_info,
+        "metricas": metricas,
+        "df_predicciones": df_predicciones.to_html(classes='table table-striped table-bordered', index=False) if df_predicciones is not None else None,
+        "es_clasificacion": es_clasificacion
+    })
+
+
+def descargar_predicciones(request, id):
+    if request.method == "POST":
+        datos_predicciones = request.POST.get("datos_predicciones")
+        archivo = get_object_or_404(ArchivoSubido, id=id)
+        
+        try:
+            # Convertir los datos JSON a DataFrame
+            df = pd.read_json(StringIO(datos_predicciones))
+            
+            # Crear respuesta para descargar
+            response = HttpResponse(content_type='text/csv')
+            response['Content-Disposition'] = f'attachment; filename="predicciones_{archivo.nombre}.csv"'
+            
+            df.to_csv(response, index=False)
+            return response
+            
+        except Exception as e:
+            messages.error(request, f"Error al generar el archivo: {str(e)}")
+            return redirect('prueba_modelado_randomforest', id=id)
 
 
 def eliminar_archivo(request, archivo_id):

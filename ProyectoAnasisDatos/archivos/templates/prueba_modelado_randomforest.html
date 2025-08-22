@@ -6,6 +6,8 @@
     <title>Prueba de Modelado con RandomForest</title>
     <!-- Bootstrap CSS -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- DataTables CSS -->
+    <link rel="stylesheet" href="https://cdn.datatables.net/1.13.4/css/dataTables.bootstrap5.min.css">
     <!-- Custom CSS -->
     <style>
         .feature-item {
@@ -45,22 +47,24 @@
         .multi-select {
             min-height: 200px;
         }
+        .prediction-table {
+            overflow-x: auto;
+        }
+        .toggle-predictions {
+            cursor: pointer;
+        }
     </style>
 </head>
 <body class="bg-light">
     <div class="container py-5">
         <div class="row justify-content-center">
-            <div class="col-lg-10">
+            <div class="col-lg-12">
                 <div class="card shadow-sm">
                     <div class="card-header bg-primary text-white">
                         <h1 class="h4 mb-0">Prueba de Modelado con RandomForest</h1>
                         <p class="file-title mb-0">{{ archivo.nombre }}</p>
                     </div>
                     
-                    <a href="{% url 'prueba_modelado_randomforest' archivo.id %}" class="btn btn-success">
-                        Prueba modelado
-                    </a>
-
                     <div class="card-body">
                         <!-- Mensajes de alerta -->
                         {% if messages %}
@@ -75,14 +79,14 @@
                         {% endif %}
 
                         <!-- Formulario de modelado -->
-                        <form method="post" action="{% url 'interfaz_modelado' archivo.id %}">
+                        <form method="post" action="{% url 'prueba_modelado_randomforest' archivo.id %}" id="modelForm">
                             {% csrf_token %}
                             
                             <!-- Sección 1: Columna objetivo -->
                             <div class="form-section">
                                 <h3 class="section-title">1. Selecciona la columna objetivo</h3>
                                 <p class="text-muted mb-3">Variable que deseas predecir</p>
-                                <select class="form-select form-select-lg mb-3" name="columna_objetivo" required>
+                                <select class="form-select form-select-lg mb-3" name="columna_objetivo" required id="columnaObjetivo">
                                     <option value="" disabled selected>-- Selecciona la columna objetivo --</option>
                                     {% for col in columnas %}
                                         <option value="{{ col }}">{{ col }}</option>
@@ -94,7 +98,7 @@
                             <div class="form-section">
                                 <h3 class="section-title">2. Selecciona las columnas predictoras</h3>
                                 <p class="text-muted mb-3">Variables que se usarán para hacer la predicción</p>
-                                <select class="form-select multi-select" name="columnas_predictoras" multiple required>
+                                <select class="form-select multi-select" name="columnas_predictoras" multiple required id="columnasPredictoras" size="8">
                                     {% for col in columnas %}
                                         <option value="{{ col }}">{{ col }}</option>
                                     {% endfor %}
@@ -104,12 +108,24 @@
                             
                             <!-- Sección 3: Valores para predicción -->
                             <div class="form-section">
-                                <h3 class="section-title">3. Valores para predicción (opcional)</h3>
-                                <p class="text-muted mb-3">Ingresa valores para hacer una predicción específica</p>
-                                <div class="mb-3">
-                                    <label for="valoresInput" class="form-label">Valores separados por coma:</label>
-                                    <input type="text" class="form-control" id="valoresInput" name="valor" placeholder="Ej: 1.2, 3.4, 5.6">
-                                    <div class="form-text">Ingresa los valores en el mismo orden de las columnas predictoras seleccionadas.</div>
+                                <h3 class="section-title">3. Opciones de predicción</h3>
+                                
+                                <div class="row mb-3">
+                                    <div class="col-md-6">
+                                        <label for="valoresInput" class="form-label">Valores para predicción individual:</label>
+                                        <input type="text" class="form-control" id="valoresInput" name="valor" placeholder="Ej: 1.2, 3.4, 5.6">
+                                        <div class="form-text">Ingresa valores separados por coma en el orden de las columnas predictoras.</div>
+                                    </div>
+                                    
+                                    <div class="col-md-6">
+                                        <div class="form-check form-switch mt-4">
+                                            <input class="form-check-input" type="checkbox" id="predecirColumna" name="predecir_columna">
+                                            <label class="form-check-label" for="predecirColumna">
+                                                Predecir columna completa
+                                            </label>
+                                            <div class="form-text">Genera predicciones para todas las filas del dataset</div>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
                             
@@ -133,14 +149,25 @@
                                         <div class="col-md-6">
                                             <h4 class="h5 mb-3">Métricas de Rendimiento</h4>
                                             <div class="list-group">
-                                                <div class="list-group-item d-flex justify-content-between align-items-center">
-                                                    Error Absoluto Medio (MAE)
-                                                    <span class="badge bg-primary rounded-pill">{{ metricas.mae }}</span>
-                                                </div>
-                                                <div class="list-group-item d-flex justify-content-between align-items-center">
-                                                    Coeficiente R²
-                                                    <span class="badge bg-primary rounded-pill">{{ metricas.r2 }}</span>
-                                                </div>
+                                                {% if metricas.tipo == 'regresión' %}
+                                                    <div class="list-group-item d-flex justify-content-between align-items-center">
+                                                        Error Absoluto Medio (MAE)
+                                                        <span class="badge bg-primary rounded-pill">{{ metricas.mae }}</span>
+                                                    </div>
+                                                    <div class="list-group-item d-flex justify-content-between align-items-center">
+                                                        Coeficiente R²
+                                                        <span class="badge bg-primary rounded-pill">{{ metricas.r2 }}</span>
+                                                    </div>
+                                                {% else %}
+                                                    <div class="list-group-item d-flex justify-content-between align-items-center">
+                                                        Precisión (Accuracy)
+                                                        <span class="badge bg-primary rounded-pill">{{ metricas.accuracy }}</span>
+                                                    </div>
+                                                    <div class="list-group-item">
+                                                        <strong>Reporte de Clasificación:</strong>
+                                                        <pre class="mt-2 p-2 bg-light">{{ metricas.classification_report }}</pre>
+                                                    </div>
+                                                {% endif %}
                                             </div>
                                         </div>
                                         
@@ -158,6 +185,30 @@
                                         </div>
                                     </div>
                                 {% endif %}
+                                
+                                <!-- Tabla de predicciones -->
+                                {% if df_predicciones %}
+                                    <div class="mt-5">
+                                        <h4 class="h5 mb-3 toggle-predictions" data-bs-toggle="collapse" href="#collapsePredictions">
+                                            <i class="bi bi-chevron-down"></i> Ver Predicciones Completas
+                                        </h4>
+                                        
+                                        <div class="collapse" id="collapsePredictions">
+                                            <div class="prediction-table">
+                                                {{ df_predicciones|safe }}
+                                            </div>
+                                            
+                                            <!-- Botón para descargar predicciones -->
+                                            <form method="post" action="{% url 'descargar_predicciones' archivo.id %}" class="mt-3">
+                                                {% csrf_token %}
+                                                <input type="hidden" name="datos_predicciones" value="{{ df_predicciones }}">
+                                                <button type="submit" class="btn btn-success">
+                                                    <i class="bi bi-download"></i> Descargar Predicciones
+                                                </button>
+                                            </form>
+                                        </div>
+                                    </div>
+                                {% endif %}
                             </div>
                         {% endif %}
                     </div>
@@ -172,7 +223,38 @@
 
     <!-- Bootstrap JS Bundle with Popper -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/js/bootstrap.bundle.min.js"></script>
+    <!-- jQuery -->
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <!-- DataTables -->
+    <script src="https://cdn.datatables.net/1.13.4/js/jquery.dataTables.min.js"></script>
+    <script src="https://cdn.datatables.net/1.13.4/js/dataTables.bootstrap5.min.js"></script>
     <!-- Bootstrap Icons -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css">
+    
+    <script>
+        $(document).ready(function() {
+            // Inicializar DataTables si existe una tabla
+            $('.table').DataTable({
+                responsive: true,
+                pageLength: 10,
+                language: {
+                    url: '//cdn.datatables.net/plug-ins/1.13.4/i18n/es-ES.json'
+                }
+            });
+            
+            // Actualizar placeholder de valores según las columnas seleccionadas
+            $('#columnasPredictoras').change(function() {
+                const selected = Array.from($(this).val() || []);
+                if (selected.length > 0) {
+                    $('#valoresInput').attr('placeholder', `Ej: ${selected.map(() => '0.0').join(', ')}`);
+                }
+            });
+            
+            // Toggle para mostrar/ocultar predicciones
+            $('.toggle-predictions').click(function() {
+                $(this).find('i').toggleClass('bi-chevron-down bi-chevron-up');
+            });
+        });
+    </script>
 </body>
 </html>
