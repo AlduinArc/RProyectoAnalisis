@@ -1134,7 +1134,7 @@ def generar_tendencia(df):
     imagen_base64 = base64.b64encode(buffer.read()).decode('utf-8')
     return imagen_base64
 
-
+"""
 def interfaz_modelado(request, id):
     archivo = get_object_or_404(ArchivoSubido, id=id)
     modelo_info = None
@@ -1254,7 +1254,7 @@ def interfaz_modelado(request, id):
         "modelo_info": modelo_info,
         "metricas": metricas
     })
-
+"""
 from django.shortcuts import render, get_object_or_404
 from django.contrib import messages
 from django.http import JsonResponse
@@ -1267,7 +1267,7 @@ from sklearn.preprocessing import LabelEncoder
 import json
 from io import StringIO
 
-def prueba_modelado_randomforest(request, id):
+def interfaz_modelado(request, id):
     archivo = get_object_or_404(ArchivoSubido, id=id)
     modelo_info = None
     metricas = None
@@ -1293,7 +1293,7 @@ def prueba_modelado_randomforest(request, id):
 
     except Exception as e:
         messages.error(request, f"Error al cargar archivo: {e}")
-        return render(request, "prueba_modelado_randomforest.html", {
+        return render(request, "interfaz_modelado.html", {
             "archivo": archivo,
             "columnas": [],
             "modelo_info": None,
@@ -1310,7 +1310,7 @@ def prueba_modelado_randomforest(request, id):
         # Validaciones
         if not columna_objetivo:
             messages.error(request, "Debes seleccionar una columna objetivo.")
-            return render(request, "prueba_modelado_randomforest.html", {
+            return render(request, "interfaz_modelado.html", {
                 "archivo": archivo,
                 "columnas": columnas_numericas,
                 "modelo_info": None,
@@ -1320,7 +1320,7 @@ def prueba_modelado_randomforest(request, id):
 
         if not columnas_predictoras:
             messages.error(request, "Debes seleccionar al menos una columna predictora.")
-            return render(request, "prueba_modelado_randomforest.html", {
+            return render(request, "interfaz_modelado.html", {
                 "archivo": archivo,
                 "columnas": columnas_numericas,
                 "modelo_info": None,
@@ -1330,7 +1330,7 @@ def prueba_modelado_randomforest(request, id):
 
         if columna_objetivo in columnas_predictoras:
             messages.error(request, "La columna objetivo no puede estar entre las predictoras.")
-            return render(request, "prueba_modelado_randomforest.html", {
+            return render(request, "interfaz_modelado.html", {
                 "archivo": archivo,
                 "columnas": columnas_numericas,
                 "modelo_info": None,
@@ -1343,8 +1343,7 @@ def prueba_modelado_randomforest(request, id):
             X = df[columnas_predictoras]
             y = df[columna_objetivo]
             
-            # Determinar si es problema de clasificación o regresión
-            # Si la variable objetivo tiene pocos valores únicos, tratamos como clasificación
+            # Determinar si es clasificación o regresión
             if y.nunique() <= 10 or y.dtype == 'object':
                 es_clasificacion = True
                 modelo = RandomForestClassifier(n_estimators=100, random_state=42)
@@ -1390,7 +1389,7 @@ def prueba_modelado_randomforest(request, id):
             
             modelo_info = f"Modelo RandomForest entrenado para predecir '{columna_objetivo}' usando {len(columnas_predictoras)} predictores."
             
-            # Hacer predicción si se proporcionan valores
+            # Predicción individual
             if valor_str:
                 try:
                     nuevo_valor = [float(v.strip()) for v in valor_str.split(",")]
@@ -1408,25 +1407,19 @@ def prueba_modelado_randomforest(request, id):
                 except ValueError:
                     messages.error(request, "Los valores de entrada deben ser números separados por comas.")
             
-            # Predecir columna completa si se solicita
+            # Predicción para toda la columna
             if predecir_columna:
-                # Hacer predicciones para todo el dataset
                 predicciones = modelo.predict(X)
-                
-                # Crear DataFrame con resultados
                 df_predicciones = df.copy()
                 df_predicciones[f'Predicción_{columna_objetivo}'] = predicciones
                 df_predicciones['Error'] = np.abs(y - predicciones) if not es_clasificacion else (y != predicciones).astype(int)
-                
-                # Convertir a HTML para mostrar en la plantilla
                 tabla_predicciones = df_predicciones.to_html(classes='table table-striped table-bordered', index=False)
-                
                 messages.success(request, f"Se han generado predicciones para toda la columna '{columna_objetivo}'.")
                 
         except Exception as e:
             messages.error(request, f"Error durante el modelado: {str(e)}")
 
-    return render(request, "prueba_modelado_randomforest.html", {
+    return render(request, "interfaz_modelado.html", {
         "archivo": archivo,
         "columnas": columnas_numericas,
         "modelo_info": modelo_info,
@@ -1442,19 +1435,459 @@ def descargar_predicciones(request, id):
         archivo = get_object_or_404(ArchivoSubido, id=id)
         
         try:
-            # Convertir los datos JSON a DataFrame
             df = pd.read_json(StringIO(datos_predicciones))
-            
-            # Crear respuesta para descargar
             response = HttpResponse(content_type='text/csv')
             response['Content-Disposition'] = f'attachment; filename="predicciones_{archivo.nombre}.csv"'
-            
             df.to_csv(response, index=False)
             return response
             
         except Exception as e:
             messages.error(request, f"Error al generar el archivo: {str(e)}")
-            return redirect('prueba_modelado_randomforest', id=id)
+            return redirect('interfaz_modelado', id=id)
+
+from django.shortcuts import render, get_object_or_404
+from django.contrib import messages
+import pandas as pd
+import numpy as np
+from sklearn.ensemble import RandomForestRegressor, RandomForestClassifier
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import mean_absolute_error, r2_score, accuracy_score, classification_report
+from sklearn.preprocessing import LabelEncoder
+import random
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+import io, base64
+
+def prueba_modelado_randomforest(request, id):
+    archivo = get_object_or_404(ArchivoSubido, id=id)
+    modelo_info = None
+    metricas = None
+    df_predicciones = None
+    df_parcial_predicciones = None
+    es_clasificacion = False
+    scatter_img = None
+    displot_img = None
+    
+    # Variables para estadísticas
+    total_filas = 0
+    conocidos_filas = 0
+    predichos_filas = 0
+    error_promedio = 0
+    accuracy_parcial = 0
+    
+
+    # Valores por defecto de los parámetros
+    parametros = {
+        'test_size': 0.2,
+        'random_state_split': 42,
+        'n_estimators': 100,
+        'random_state_model': 42,
+        'max_depth': None,
+        'min_samples_split': 2,
+        'min_samples_leaf': 1
+    }
+    
+    # Valores para mostrar en la plantilla
+    test_size_percent = 20
+    train_size_percent = 80
+
+    try:
+        df = pd.read_csv(archivo.archivo.path, sep=None, engine='python', on_bad_lines='skip')
+        df.dropna(inplace=True)
+        
+        # Identificar columnas numéricas y categóricas
+        columnas_numericas = df.select_dtypes(include=['number']).columns.tolist()
+        columnas_categoricas = df.select_dtypes(exclude=['number']).columns.tolist()
+        
+        # Convertir columnas categóricas si existen
+        if columnas_categoricas:
+            for col in columnas_categoricas:
+                le = LabelEncoder()
+                df[col] = le.fit_transform(df[col].astype(str))
+            columnas_numericas = df.select_dtypes(include=['number']).columns.tolist()
+
+    except Exception as e:
+        messages.error(request, f"Error al cargar archivo: {e}")
+        return render(request, "prueba_modelado_randomforest.html", {
+            "archivo": archivo,
+            "columnas": [],
+            "modelo_info": None,
+            "metricas": None,
+            "df_predicciones": None,
+            "df_parcial_predicciones": None,
+            "total_filas": total_filas,
+            "conocidos_filas": conocidos_filas,
+            "predichos_filas": predichos_filas,
+            "error_promedio": error_promedio,
+            "accuracy_parcial": accuracy_parcial,
+            "parametros": parametros,
+            "test_size_percent": test_size_percent,
+            "train_size_percent": train_size_percent
+        })
+
+    if request.method == "POST":
+        columna_objetivo = request.POST.get("columna_objetivo")
+        columnas_predictoras = request.POST.getlist("columnas_predictoras")
+        valor_str = request.POST.get("valor", "").strip()
+        predecir_columna = request.POST.get("predecir_columna") == "on"
+        predecir_parcial = request.POST.get("predecir_parcial") == "on"
+        porcentaje_datos = float(request.POST.get("porcentaje_datos", 50))
+        
+        # Obtener parámetros ajustables del usuario
+        try:
+            # test_size como porcentaje
+            test_size_percent = float(request.POST.get("test_size", 20))
+            parametros['test_size'] = test_size_percent / 100.0
+            train_size_percent = 100 - test_size_percent
+            
+            # Parámetros principales
+            parametros['random_state_split'] = int(request.POST.get("random_state_split", 42))
+            parametros['n_estimators'] = int(request.POST.get("n_estimators", 100))
+            parametros['random_state_model'] = int(request.POST.get("random_state_model", 42))
+            
+            # Parámetros avanzados
+            max_depth_str = request.POST.get("max_depth", "")
+            parametros['max_depth'] = int(max_depth_str) if max_depth_str and max_depth_str != "None" else None
+            
+            parametros['min_samples_split'] = int(request.POST.get("min_samples_split", 2))
+            parametros['min_samples_leaf'] = int(request.POST.get("min_samples_leaf", 1))
+            
+        except (ValueError, TypeError):
+            messages.warning(request, "Parámetros inválidos, usando valores por defecto.")
+            parametros = {
+                'test_size': 0.2,
+                'random_state_split': 42,
+                'n_estimators': 100,
+                'random_state_model': 42,
+                'max_depth': None,
+                'min_samples_split': 2,
+                'min_samples_leaf': 1
+            }
+            test_size_percent = 20
+            train_size_percent = 80
+        
+        # Validaciones
+        if not columna_objetivo or columna_objetivo not in df.columns:
+            messages.error(request, "Debes seleccionar una columna objetivo válida.")
+            return render(request, "prueba_modelado_randomforest.html", {
+                "archivo": archivo,
+                "columnas": columnas_numericas,
+                "modelo_info": None,
+                "metricas": None,
+                "df_predicciones": None,
+                "df_parcial_predicciones": None,
+                "total_filas": total_filas,
+                "conocidos_filas": conocidos_filas,
+                "predichos_filas": predichos_filas,
+                "error_promedio": error_promedio,
+                "accuracy_parcial": accuracy_parcial,
+                "parametros": parametros,
+                "test_size_percent": test_size_percent,
+                "train_size_percent": train_size_percent
+            })
+
+        if not columnas_predictoras or not all(col in df.columns for col in columnas_predictoras):
+            messages.error(request, "Debes seleccionar columnas predictoras válidas.")
+            return render(request, "prueba_modelado_randomforest.html", {
+                "archivo": archivo,
+                "columnas": columnas_numericas,
+                "modelo_info": None,
+                "metricas": None,
+                "df_predicciones": None,
+                "df_parcial_predicciones": None,
+                "total_filas": total_filas,
+                "conocidos_filas": conocidos_filas,
+                "predichos_filas": predichos_filas,
+                "error_promedio": error_promedio,
+                "accuracy_parcial": accuracy_parcial,
+                "parametros": parametros,
+                "test_size_percent": test_size_percent,
+                "train_size_percent": train_size_percent
+            })
+
+        if columna_objetivo in columnas_predictoras:
+            messages.error(request, "La columna objetivo no puede estar entre las predictoras.")
+            return render(request, "prueba_modelado_randomforest.html", {
+                "archivo": archivo,
+                "columnas": columnas_numericas,
+                "modelo_info": None,
+                "metricas": None,
+                "df_predicciones": None,
+                "df_parcial_predicciones": None,
+                "total_filas": total_filas,
+                "conocidos_filas": conocidos_filas,
+                "predichos_filas": predichos_filas,
+                "error_promedio": error_promedio,
+                "accuracy_parcial": accuracy_parcial,
+                "parametros": parametros,
+                "test_size_percent": test_size_percent,
+                "train_size_percent": train_size_percent
+            })
+
+        try:
+            # Preparar datos
+            X = df[columnas_predictoras].apply(pd.to_numeric, errors='coerce')
+            y = df[columna_objetivo].apply(pd.to_numeric, errors='coerce')
+            
+            # Eliminar filas con NaN
+            mask = ~(X.isna().any(axis=1) | y.isna())
+            X = X[mask]
+            y = y[mask]
+            
+            if len(X) == 0:
+                messages.error(request, "No hay datos válidos después de la limpieza.")
+                return render(request, "prueba_modelado_randomforest.html", {
+                    "archivo": archivo,
+                    "columnas": columnas_numericas,
+                    "modelo_info": None,
+                    "metricas": None,
+                    "df_predicciones": None,
+                    "df_parcial_predicciones": None,
+                    "total_filas": total_filas,
+                    "conocidos_filas": conocidos_filas,
+                    "predichos_filas": predichos_filas,
+                    "error_promedio": error_promedio,
+                    "accuracy_parcial": accuracy_parcial,
+                    "parametros": parametros,
+                    "test_size_percent": test_size_percent,
+                    "train_size_percent": train_size_percent
+                })
+            
+            # Determinar si es problema de clasificación o regresión
+            if y.nunique() <= 10:
+                es_clasificacion = True
+                modelo = RandomForestClassifier(
+                    n_estimators=parametros['n_estimators'],
+                    random_state=parametros['random_state_model'],
+                    max_depth=parametros['max_depth'],
+                    min_samples_split=parametros['min_samples_split'],
+                    min_samples_leaf=parametros['min_samples_leaf']
+                )
+            else:
+                modelo = RandomForestRegressor(
+                    n_estimators=parametros['n_estimators'],
+                    random_state=parametros['random_state_model'],
+                    max_depth=parametros['max_depth'],
+                    min_samples_split=parametros['min_samples_split'],
+                    min_samples_leaf=parametros['min_samples_leaf']
+                )
+            
+            # Entrenar modelo
+            X_train, X_test, y_train, y_test = train_test_split(
+                X, y, 
+                test_size=parametros['test_size'],
+                random_state=parametros['random_state_split']
+            )
+            
+            modelo.fit(X_train, y_train)
+            
+            # Calcular métricas
+            y_pred = modelo.predict(X_test)
+            
+            # Crear gráfico scatter solo si es regresión
+            if not es_clasificacion:
+                try:
+                    fig, ax = plt.subplots(figsize=(12, 6))
+
+                    # Eje X como índice temporal
+                    x_axis = range(len(y_test))
+
+                    # Puntos de valores reales
+                    ax.scatter(x_axis, y_test.values, label="Datos reales", color="blue", alpha=0.6, s=30)
+
+                    # Puntos de predicción
+                    ax.scatter(x_axis, y_pred, label="Predicción", color="green", alpha=0.6, s=30)
+
+                    ax.set_xlabel("Tiempo (índice de muestra)")
+                    ax.set_ylabel(columna_objetivo)
+                    ax.set_title(f"Comparación de valores reales vs predichos ({columna_objetivo})")
+                    ax.legend()
+
+                    # Guardar como imagen base64
+                    buf = io.BytesIO()
+                    plt.tight_layout()
+                    plt.savefig(buf, format="png")
+                    plt.close(fig)
+                    buf.seek(0)
+                    scatter_img = base64.b64encode(buf.getvalue()).decode("utf-8")
+
+                    # Generar gráfico displot (real vs predicho)
+                    fig, ax = plt.subplots(figsize=(8, 5))
+                    sns.histplot(y_test, color="blue", kde=True, label="Real", stat="density", ax=ax, alpha=0.4)
+                    sns.histplot(y_pred, color="green", kde=True, label="Predicho", stat="density", ax=ax, alpha=0.4)
+                    ax.set_title("Distribución Real vs Predicho")
+                    ax.set_xlabel("Valores")
+                    ax.set_ylabel("Densidad")
+                    ax.legend()
+
+                    # Convertir a base64
+                    buffer = io.BytesIO()
+                    plt.savefig(buffer, format="png", bbox_inches="tight")
+                    buffer.seek(0)
+                    displot_img = base64.b64encode(buffer.getvalue()).decode("utf-8")
+                    plt.close(fig)
+
+
+
+                except Exception as e:
+                    print("Error al generar gráfico:", e)
+
+            if es_clasificacion:
+                accuracy = accuracy_score(y_test, y_pred)
+                metricas = {
+                    'accuracy': round(accuracy, 4),
+                    'classification_report': classification_report(y_test, y_pred),
+                    'n_estimators': modelo.n_estimators,
+                    'features_importances': sorted(
+                        zip(columnas_predictoras, modelo.feature_importances_),
+                        key=lambda x: x[1],
+                        reverse=True
+                    ),
+                    'tipo': 'clasificación',
+                    'test_size': parametros['test_size'],
+                    'test_size_percent': test_size_percent,
+                    'random_state_split': parametros['random_state_split'],
+                    'random_state_model': parametros['random_state_model'],
+                    'max_depth': parametros['max_depth'],
+                    'min_samples_split': parametros['min_samples_split'],
+                    'min_samples_leaf': parametros['min_samples_leaf']
+                }
+            else:
+                mae = mean_absolute_error(y_test, y_pred)
+                r2 = r2_score(y_test, y_pred)
+                metricas = {
+                    'mae': round(mae, 4),
+                    'r2': round(r2, 4),
+                    'n_estimators': modelo.n_estimators,
+                    'features_importances': sorted(
+                        zip(columnas_predictoras, modelo.feature_importances_),
+                        key=lambda x: x[1],
+                        reverse=True
+                    ),
+                    'tipo': 'regresión',
+                    'test_size': parametros['test_size'],
+                    'test_size_percent': test_size_percent,
+                    'random_state_split': parametros['random_state_split'],
+                    'random_state_model': parametros['random_state_model'],
+                    'max_depth': parametros['max_depth'],
+                    'min_samples_split': parametros['min_samples_split'],
+                    'min_samples_leaf': parametros['min_samples_leaf']
+                }
+            
+            modelo_info = f"Modelo RandomForest entrenado para predecir '{columna_objetivo}' usando {len(columnas_predictoras)} predictores."
+            
+            # Hacer predicción si se proporcionan valores
+            if valor_str:
+                try:
+                    nuevo_valor = [float(v.strip()) for v in valor_str.split(",")]
+                    if len(nuevo_valor) != len(columnas_predictoras):
+                        messages.error(
+                            request,
+                            f"Debes ingresar {len(columnas_predictoras)} valores separados por coma (uno por cada predictor)."
+                        )
+                    else:
+                        prediccion = modelo.predict([nuevo_valor])[0]
+                        messages.success(
+                            request,
+                            f"Predicción para '{columna_objetivo}': {prediccion:.4f}"
+                        )
+                except ValueError:
+                    messages.error(request, "Los valores de entrada deben ser números separados por comas.")
+            
+            # Predecir columna completa
+            if predecir_columna:
+                predicciones = modelo.predict(X)
+                df_predicciones = df.loc[X.index].copy()
+                df_predicciones[f'Predicción_{columna_objetivo}'] = predicciones
+                df_predicciones['Error'] = np.abs(y.values - predicciones) if not es_clasificacion else (y.values != predicciones).astype(int)
+                messages.success(request, f"Se han generado predicciones para {len(df_predicciones)} filas.")
+            
+            # Predicción parcial de datos
+            if predecir_parcial:
+                n_filas = len(X)
+                n_entrenamiento = int(n_filas * (porcentaje_datos / 100))
+                indices = X.index.tolist()
+                random.shuffle(indices)
+                indices_con_target = indices[:n_entrenamiento]
+                indices_sin_target = indices[n_entrenamiento:]
+                
+                if not indices_sin_target:
+                    messages.warning(request, "No hay datos para predecir con el porcentaje seleccionado.")
+                else:
+                    # Entrenar modelo solo con datos conocidos
+                    X_conocido = X.loc[indices_con_target]
+                    y_conocido = y.loc[indices_con_target]
+                    
+                    if es_clasificacion:
+                        modelo_parcial = RandomForestClassifier(
+                            n_estimators=parametros['n_estimators'],
+                            random_state=parametros['random_state_model'],
+                            max_depth=parametros['max_depth'],
+                            min_samples_split=parametros['min_samples_split'],
+                            min_samples_leaf=parametros['min_samples_leaf']
+                        )
+                    else:
+                        modelo_parcial = RandomForestRegressor(
+                            n_estimators=parametros['n_estimators'],
+                            random_state=parametros['random_state_model'],
+                            max_depth=parametros['max_depth'],
+                            min_samples_split=parametros['min_samples_split'],
+                            min_samples_leaf=parametros['min_samples_leaf']
+                        )
+                    
+                    modelo_parcial.fit(X_conocido, y_conocido)
+                    predicciones_todas = modelo_parcial.predict(X)
+                    
+                    df_parcial_predicciones = df.loc[X.index].copy()
+                    df_parcial_predicciones[f'Predicción_{columna_objetivo}'] = predicciones_todas
+                    
+                    if es_clasificacion:
+                        df_parcial_predicciones['Error'] = (y.values != predicciones_todas).astype(int)
+                    else:
+                        df_parcial_predicciones['Error'] = np.abs(y.values - predicciones_todas)
+                    
+                    df_parcial_predicciones['Tipo'] = 'Predicho'
+                    df_parcial_predicciones.loc[indices_con_target, 'Tipo'] = 'Conocido (Entrenamiento)'
+                    
+                    total_filas = len(df_parcial_predicciones)
+                    conocidos_filas = len(indices_con_target)
+                    predichos_filas = len(indices_sin_target)
+                    
+                    if conocidos_filas > 0:
+                        datos_entrenamiento = df_parcial_predicciones.loc[indices_con_target]
+                        if es_clasificacion:
+                            correctos = len(datos_entrenamiento[datos_entrenamiento['Error'] == 0])
+                            accuracy_parcial = round((correctos / conocidos_filas) * 100, 2)
+                        else:
+                            error_promedio = round(datos_entrenamiento['Error'].mean(), 4)
+                    
+                    messages.success(request, f"Predicción parcial completada. {conocidos_filas} filas para entrenamiento, {predichos_filas} filas predichas.")
+                
+        except Exception as e:
+            messages.error(request, f"Error durante el modelado: {str(e)}")
+            import traceback
+            traceback.print_exc()
+
+    return render(request, "prueba_modelado_randomforest.html", {
+        "archivo": archivo,
+        "columnas": columnas_numericas,
+        "modelo_info": modelo_info,
+        "metricas": metricas,
+        "df_predicciones": df_predicciones,
+        "df_parcial_predicciones": df_parcial_predicciones,
+        "es_clasificacion": es_clasificacion,
+        "total_filas": total_filas,
+        "conocidos_filas": conocidos_filas,
+        "predichos_filas": predichos_filas,
+        "error_promedio": error_promedio,
+        "accuracy_parcial": accuracy_parcial,
+        "parametros": parametros,
+        "test_size_percent": test_size_percent,
+        "train_size_percent": train_size_percent,
+        "scatter_img": scatter_img,
+        "displot_img": displot_img,
+    })
 
 
 def eliminar_archivo(request, archivo_id):

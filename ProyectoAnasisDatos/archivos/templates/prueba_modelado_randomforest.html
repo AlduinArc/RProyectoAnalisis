@@ -3,12 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Prueba de Modelado con RandomForest</title>
+    <title>Modelado con RandomForest</title>
     <!-- Bootstrap CSS -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet">
     <!-- DataTables CSS -->
     <link rel="stylesheet" href="https://cdn.datatables.net/1.13.4/css/dataTables.bootstrap5.min.css">
-    <!-- Custom CSS -->
+    <!-- Bootstrap Icons -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css">
     <style>
         .feature-item {
             display: flex;
@@ -18,243 +19,266 @@
             background-color: #f8f9fa;
             border-radius: 4px;
         }
-        .feature-name {
-            font-weight: bold;
-            color: #212529;
-        }
-        .feature-value {
-            color: #0d6efd;
-            font-weight: 500;
-        }
-        .model-results {
-            border-left: 4px solid #0d6efd;
-        }
-        .file-title {
-            color: #6c757d;
-            font-size: 1.1rem;
-        }
-        .section-title {
-            border-bottom: 1px solid #dee2e6;
-            padding-bottom: 0.5rem;
-            margin-bottom: 1.5rem;
-        }
-        .form-section {
-            margin-bottom: 2rem;
-            background-color: #f8f9fa;
-            padding: 1.5rem;
-            border-radius: 0.5rem;
-        }
-        .multi-select {
-            min-height: 200px;
-        }
-        .prediction-table {
-            overflow-x: auto;
-        }
-        .toggle-predictions {
-            cursor: pointer;
-        }
+        .feature-name { font-weight: bold; color: #212529; }
+        .feature-value { color: #0d6efd; font-weight: 500; }
+        .model-results { border-left: 4px solid #0d6efd; }
+        .file-title { color: #6c757d; font-size: 1.1rem; }
+        .section-title { border-bottom: 1px solid #dee2e6; padding-bottom: 0.5rem; margin-bottom: 1.5rem; }
+        .form-section { margin-bottom: 2rem; background-color: #f8f9fa; padding: 1.5rem; border-radius: 0.5rem; }
+        .multi-select { min-height: 200px; }
+        .prediction-table { overflow-x: auto; }
+        .toggle-predictions { cursor: pointer; }
     </style>
 </head>
 <body class="bg-light">
-    <div class="container py-5">
-        <div class="row justify-content-center">
-            <div class="col-lg-12">
-                <div class="card shadow-sm">
-                    <div class="card-header bg-primary text-white">
-                        <h1 class="h4 mb-0">Prueba de Modelado con RandomForest</h1>
-                        <p class="file-title mb-0">{{ archivo.nombre }}</p>
-                    </div>
-                    
-                    <div class="card-body">
-                        <!-- Mensajes de alerta -->
-                        {% if messages %}
-                            <div class="mb-4">
-                                {% for message in messages %}
-                                    <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
-                                        {{ message }}
-                                        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-                                    </div>
-                                {% endfor %}
-                            </div>
-                        {% endif %}
+<div class="container py-5">
+    <div class="row justify-content-center">
+        <div class="col-lg-12">
+            <div class="card shadow-sm">
+                <div class="card-header bg-primary text-white">
+                    <h1 class="h4 mb-0">Interfaz de Modelado con RandomForest</h1>
+                    <p class="file-title mb-0">{{ archivo.nombre }}</p>
+                </div>
+                
+                <div class="card-body">
+                    <!-- Mensajes -->
+                    {% if messages %}
+                        <div class="mb-4">
+                            {% for message in messages %}
+                                <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
+                                    {{ message }}
+                                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                                </div>
+                            {% endfor %}
+                        </div>
+                    {% endif %}
 
-                        <!-- Formulario de modelado -->
-                        <form method="post" action="{% url 'prueba_modelado_randomforest' archivo.id %}" id="modelForm">
-                            {% csrf_token %}
-                            
-                            <!-- Sección 1: Columna objetivo -->
-                            <div class="form-section">
-                                <h3 class="section-title">1. Selecciona la columna objetivo</h3>
-                                <p class="text-muted mb-3">Variable que deseas predecir</p>
-                                <select class="form-select form-select-lg mb-3" name="columna_objetivo" required id="columnaObjetivo">
-                                    <option value="" disabled selected>-- Selecciona la columna objetivo --</option>
-                                    {% for col in columnas %}
-                                        <option value="{{ col }}">{{ col }}</option>
-                                    {% endfor %}
-                                </select>
-                            </div>
-                            
-                            <!-- Sección 2: Columnas predictoras -->
-                            <div class="form-section">
-                                <h3 class="section-title">2. Selecciona las columnas predictoras</h3>
-                                <p class="text-muted mb-3">Variables que se usarán para hacer la predicción</p>
-                                <select class="form-select multi-select" name="columnas_predictoras" multiple required id="columnasPredictoras" size="8">
-                                    {% for col in columnas %}
-                                        <option value="{{ col }}">{{ col }}</option>
-                                    {% endfor %}
-                                </select>
-                                <small class="text-muted">Mantén presionado Ctrl (Windows) o Command (Mac) para seleccionar múltiples</small>
-                            </div>
-                            
-                            <!-- Sección 3: Valores para predicción -->
-                            <div class="form-section">
-                                <h3 class="section-title">3. Opciones de predicción</h3>
-                                
-                                <div class="row mb-3">
-                                    <div class="col-md-6">
-                                        <label for="valoresInput" class="form-label">Valores para predicción individual:</label>
-                                        <input type="text" class="form-control" id="valoresInput" name="valor" placeholder="Ej: 1.2, 3.4, 5.6">
-                                        <div class="form-text">Ingresa valores separados por coma en el orden de las columnas predictoras.</div>
-                                    </div>
-                                    
-                                    <div class="col-md-6">
-                                        <div class="form-check form-switch mt-4">
-                                            <input class="form-check-input" type="checkbox" id="predecirColumna" name="predecir_columna">
-                                            <label class="form-check-label" for="predecirColumna">
-                                                Predecir columna completa
-                                            </label>
-                                            <div class="form-text">Genera predicciones para todas las filas del dataset</div>
-                                        </div>
+                    <!-- Formulario -->
+                    <form method="post" action="{% url 'prueba_modelado_randomforest' archivo.id %}" id="modelForm">
+                        {% csrf_token %}
+
+                        <!-- Columna objetivo -->
+                        <div class="form-section">
+                            <h3 class="section-title">1. Columna objetivo</h3>
+                            <select class="form-select form-select-lg mb-3" name="columna_objetivo" required>
+                                <option value="" disabled selected>-- Selecciona columna objetivo --</option>
+                                {% for col in columnas %}
+                                    <option value="{{ col }}">{{ col }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+
+                        <!-- Columnas predictoras -->
+                        <div class="form-section">
+                            <h3 class="section-title">2. Columnas predictoras</h3>
+                            <select class="form-select multi-select" name="columnas_predictoras" multiple required id="columnasPredictoras">
+                                {% for col in columnas %}
+                                    <option value="{{ col }}">{{ col }}</option>
+                                {% endfor %}
+                            </select>
+                            <small class="text-muted">Ctrl/Command para selección múltiple</small>
+                        </div>
+
+                        <!-- Valores de entrada -->
+                        <div class="form-section">
+                            <h3 class="section-title">3. Opciones de predicción</h3>
+                            <div class="row mb-3">
+                                <div class="col-md-6">
+                                    <label for="valoresInput" class="form-label">Valores individuales:</label>
+                                    <input type="text" class="form-control" id="valoresInput" name="valor" placeholder="Ej: 1.2, 3.4, 5.6">
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="form-check form-switch mt-4">
+                                        <input class="form-check-input" type="checkbox" id="predecirColumna" name="predecir_columna">
+                                        <label class="form-check-label" for="predecirColumna">Predecir toda la columna</label>
                                     </div>
                                 </div>
                             </div>
-                            
-                            <!-- Botón de envío -->
-                            <div class="d-grid gap-2">
-                                <button type="submit" class="btn btn-primary btn-lg">
-                                    <i class="bi bi-gear-fill"></i> Ejecutar Prueba de Modelado
-                                </button>
-                            </div>
-                        </form>
+                        </div>
 
-                        <!-- Resultados del modelo -->
-                        {% if modelo_info %}
-                            <div class="mt-5 p-4 model-results bg-white rounded shadow-sm">
-                                <h3 class="section-title text-primary">Resultados del Modelo RandomForest</h3>
-                                <p class="lead">{{ modelo_info }}</p>
-                                
-                                {% if metricas %}
-                                    <div class="row mt-4">
-                                        <!-- Métricas de rendimiento -->
-                                        <div class="col-md-6">
-                                            <h4 class="h5 mb-3">Métricas de Rendimiento</h4>
-                                            <div class="list-group">
-                                                {% if metricas.tipo == 'regresión' %}
-                                                    <div class="list-group-item d-flex justify-content-between align-items-center">
-                                                        Error Absoluto Medio (MAE)
-                                                        <span class="badge bg-primary rounded-pill">{{ metricas.mae }}</span>
-                                                    </div>
-                                                    <div class="list-group-item d-flex justify-content-between align-items-center">
-                                                        Coeficiente R²
-                                                        <span class="badge bg-primary rounded-pill">{{ metricas.r2 }}</span>
-                                                    </div>
-                                                {% else %}
-                                                    <div class="list-group-item d-flex justify-content-between align-items-center">
-                                                        Precisión (Accuracy)
-                                                        <span class="badge bg-primary rounded-pill">{{ metricas.accuracy }}</span>
-                                                    </div>
-                                                    <div class="list-group-item">
-                                                        <strong>Reporte de Clasificación:</strong>
-                                                        <pre class="mt-2 p-2 bg-light">{{ metricas.classification_report }}</pre>
-                                                    </div>
-                                                {% endif %}
-                                            </div>
-                                        </div>
-                                        
-                                        <!-- Importancia de variables -->
-                                        <div class="col-md-6">
-                                            <h4 class="h5 mb-3">Importancia de Variables</h4>
-                                            <div class="feature-importance">
-                                                {% for feature, importance in metricas.features_importances %}
-                                                    <div class="feature-item">
-                                                        <span class="feature-name">{{ feature }}</span>
-                                                        <span class="feature-value">{{ importance|floatformat:4 }}</span>
-                                                    </div>
-                                                {% endfor %}
-                                            </div>
-                                        </div>
-                                    </div>
-                                {% endif %}
-                                
-                                <!-- Tabla de predicciones -->
-                                {% if df_predicciones %}
-                                    <div class="mt-5">
-                                        <h4 class="h5 mb-3 toggle-predictions" data-bs-toggle="collapse" href="#collapsePredictions">
-                                            <i class="bi bi-chevron-down"></i> Ver Predicciones Completas
-                                        </h4>
-                                        
-                                        <div class="collapse" id="collapsePredictions">
-                                            <div class="prediction-table">
-                                                {{ df_predicciones|safe }}
-                                            </div>
-                                            
-                                            <!-- Botón para descargar predicciones -->
-                                            <form method="post" action="{% url 'descargar_predicciones' archivo.id %}" class="mt-3">
-                                                {% csrf_token %}
-                                                <input type="hidden" name="datos_predicciones" value="{{ df_predicciones }}">
-                                                <button type="submit" class="btn btn-success">
-                                                    <i class="bi bi-download"></i> Descargar Predicciones
-                                                </button>
-                                            </form>
-                                        </div>
-                                    </div>
-                                {% endif %}
+                        <!-- Predicción parcial -->
+                        
+                        <div class="form-section">
+                            <h3 class="section-title">4. Predicción parcial</h3>
+                            <div class="form-check form-switch mb-3">
+                                <input class="form-check-input" type="checkbox" id="predecirParcial" name="predecir_parcial">
+                                <label class="form-check-label" for="predecirParcial">Activar predicción parcial</label>
                             </div>
-                        {% endif %}
-                    </div>
+
+                            <!-- Tamaño de test -->
+                            <div class="mb-3">
+                                <label for="testSize" class="form-label">Tamaño de test (%):</label>
+                                <input type="range" class="form-range" id="testSize" name="test_size"
+                                    min="5" max="50" step="1" value="20" oninput="updateTestSize(this.value)">
+                                <div class="form-text" id="testSizeValue">20% test, 80% entrenamiento</div>
+                            </div>
+
+                            <!-- Número de estimadores -->
+                            <div class="mb-3">
+                                <label for="nEstimators" class="form-label">Número de árboles (n_estimators):</label>
+                                <select class="form-select" id="nEstimators" name="n_estimators">
+                                    <option value="10">10</option>
+                                    <option value="50">50</option>
+                                    <option value="100" selected>100</option>
+                                    <option value="200">200</option>
+                                    <option value="500">500</option>
+                                </select>
+                            </div>
+
+                            <!-- Random state split -->
+                            <div class="mb-3">
+                                <label for="randomStateSplit" class="form-label">Random state (split):</label>
+                                <input type="number" class="form-control" id="randomStateSplit"
+                                    name="random_state_split" min="0" max="100" value="42">
+                            </div>
+
+                            <!-- Random state modelo -->
+                            <div class="mb-3">
+                                <label for="randomStateModel" class="form-label">Random state (modelo):</label>
+                                <input type="number" class="form-control" id="randomStateModel"
+                                    name="random_state_model" min="0" max="100" value="42">
+                            </div>
+                        </div>
+
+
+                        <div class="d-grid gap-2">
+                            <button type="submit" class="btn btn-primary btn-lg">
+                                <i class="bi bi-gear-fill"></i> Ejecutar Modelado
+                            </button>
+                        </div>
+                    </form>
                     
-                    <div class="card-footer text-muted text-center">
-                        <small>Sistema de modelado predictivo - RandomForest</small>
-                    </div>
+                    <!-- Gráficos comparativos -->
+                    {% if scatter_img or displot_img %}
+                        <div class="mt-5 p-4 model-results bg-white rounded shadow-sm">
+                            <div class="row text-center">
+                                
+                                <!-- Gráfico scatter -->
+                                {% if scatter_img %}
+                                    <div class="col-md-6 mb-4">
+                                        <h3 class="section-title text-info">Comparación Real vs Predicho</h3>
+                                        <img src="data:image/png;base64,{{ scatter_img }}" 
+                                            class="img-fluid rounded shadow" 
+                                            alt="Scatter plot"
+                                            width="600" height="400">
+                                    </div>
+                                {% endif %}
+
+                                <!-- Gráfico displot -->
+                                {% if displot_img %}
+                                    <div class="col-md-6 mb-4">
+                                        <h3 class="section-title text-warning">Distribución Real vs Predicho</h3>
+                                        <img src="data:image/png;base64,{{ displot_img }}" 
+                                            class="img-fluid rounded shadow" 
+                                            alt="Displot comparación"
+                                            width="600" height="400">
+                                    </div>
+                                {% endif %}
+
+                            </div>
+                        </div>
+                    {% endif %}
+
+                    <!-- Resultados predicción parcial -->
+                    {% if df_parcial_predicciones is not None %}
+                        <div class="mt-5 p-4 model-results bg-white rounded shadow-sm">
+                            <h3 class="section-title text-success">Resultados Predicción Parcial</h3>
+                            <p>
+                                <strong>Total filas:</strong> {{ total_filas }} <br>
+                                <strong>Conocidas:</strong> {{ conocidos_filas }} <br>
+                                <strong>Predichas:</strong> {{ predichos_filas }}
+                            </p>
+                            {% if error_promedio %}
+                                <p><strong>Error promedio:</strong> {{ error_promedio }}</p>
+                            {% endif %}
+                            {% if accuracy_parcial %}
+                                <p><strong>Accuracy parcial:</strong> {{ accuracy_parcial }}%</p>
+                            {% endif %}
+                            <h5 class="toggle-predictions" data-bs-toggle="collapse" href="#collapsePartial">
+                                <i class="bi bi-chevron-down"></i> Ver resultados parciales
+                            </h5>
+                            <div class="collapse" id="collapsePartial">
+                                <div class="prediction-table">
+                                    {{ df_parcial_predicciones.to_html|safe }}
+                                </div>
+                            </div>
+                        </div>
+                    {% endif %}
+
+                    
+
+                    <!-- Resultados del modelo -->
+                    {% if modelo_info %}
+                        <div class="mt-5 p-4 model-results bg-white rounded shadow-sm">
+                            <h3 class="section-title text-primary">Resultados Modelo</h3>
+                            <p>{{ modelo_info }}</p>
+                            {% if metricas %}
+                                <p><strong>Tipo:</strong> {{ metricas.tipo }}</p>
+                                {% if es_clasificacion %}
+                                    <p><strong>Accuracy:</strong> {{ metricas.accuracy }}</p>
+                                {% else %}
+                                    <p><strong>MAE:</strong> {{ metricas.mae }}</p>
+                                    <p><strong>R²:</strong> {{ metricas.r2 }}</p>
+                                {% endif %}
+                            {% endif %}
+                            {% if df_predicciones %}
+                                <h5 class="toggle-predictions" data-bs-toggle="collapse" href="#collapsePredicciones">
+                                    <i class="bi bi-chevron-down"></i> Ver predicciones
+                                </h5>
+                                <div class="collapse" id="collapsePredicciones">
+                                    <div class="prediction-table">{{ df_predicciones|safe }}</div>
+                                    <form method="post" action="{% url 'descargar_predicciones' archivo.id %}" class="mt-3">
+                                        {% csrf_token %}
+                                        <input type="hidden" name="datos_predicciones" value="{{ df_predicciones }}">
+                                        <button type="submit" class="btn btn-success">
+                                            <i class="bi bi-download"></i> Descargar
+                                        </button>
+                                    </form>
+                                </div>
+                            {% endif %}
+                        </div>
+                    {% endif %}
+                </div>
+                <div class="card-footer text-muted text-center">
+                    <small>Sistema de modelado - RandomForest</small>
                 </div>
             </div>
         </div>
     </div>
+</div>
 
-    <!-- Bootstrap JS Bundle with Popper -->
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/js/bootstrap.bundle.min.js"></script>
-    <!-- jQuery -->
-    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
-    <!-- DataTables -->
-    <script src="https://cdn.datatables.net/1.13.4/js/jquery.dataTables.min.js"></script>
-    <script src="https://cdn.datatables.net/1.13.4/js/dataTables.bootstrap5.min.js"></script>
-    <!-- Bootstrap Icons -->
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css">
-    
-    <script>
-        $(document).ready(function() {
-            // Inicializar DataTables si existe una tabla
-            $('.table').DataTable({
-                responsive: true,
-                pageLength: 10,
-                language: {
-                    url: '//cdn.datatables.net/plug-ins/1.13.4/i18n/es-ES.json'
-                }
-            });
-            
-            // Actualizar placeholder de valores según las columnas seleccionadas
-            $('#columnasPredictoras').change(function() {
-                const selected = Array.from($(this).val() || []);
-                if (selected.length > 0) {
-                    $('#valoresInput').attr('placeholder', `Ej: ${selected.map(() => '0.0').join(', ')}`);
-                }
-            });
-            
-            // Toggle para mostrar/ocultar predicciones
-            $('.toggle-predictions').click(function() {
-                $(this).find('i').toggleClass('bi-chevron-down bi-chevron-up');
-            });
+<!-- JS -->
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+<script src="https://cdn.datatables.net/1.13.4/js/jquery.dataTables.min.js"></script>
+<script src="https://cdn.datatables.net/1.13.4/js/dataTables.bootstrap5.min.js"></script>
+<script>
+    $(document).ready(function() {
+        $('.table').DataTable({
+            responsive: true,
+            pageLength: 10,
+            language: { url: '//cdn.datatables.net/plug-ins/1.13.4/i18n/es-ES.json' }
         });
-    </script>
+        $('#columnasPredictoras').change(function() {
+            const selected = Array.from($(this).val() || []);
+            if (selected.length > 0) {
+                $('#valoresInput').attr('placeholder', `Ej: ${selected.map(() => '0.0').join(', ')}`);
+            }
+        });
+        $('.toggle-predictions').click(function() {
+            $(this).find('i').toggleClass('bi-chevron-down bi-chevron-up');
+        });
+    });
+    function updatePercentageValue(value) {
+        document.getElementById('percentageValue').textContent =
+            value + '% entrenamiento, ' + (100 - value) + '% predicción';
+    }
+    function updateTestSize(value) {
+    document.getElementById('testSizeValue').textContent =
+        value + '% test, ' + (100 - value) + '% entrenamiento';
+    }
+
+
+</script>
 </body>
 </html>
