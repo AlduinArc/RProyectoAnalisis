@@ -101,4 +101,23 @@
         </div>
     </div>
 </div>
+<div class="row">
+    <!-- Matriz de correlación -->
+    <div class="col-md-12">
+        <div class="card mb-4">
+            <div class="card-header bg-info text-white">
+                Matriz de correlación
+            </div>
+            <div class="card-body text-center">
+                {% if correlacion_img %}
+                    <img src="data:image/png;base64,{{ correlacion_img }}" 
+                    class="img-fluid rounded shadow" 
+                    width="500" height="400"/>
+                {% else %}
+                    <p>No hay suficientes columnas numéricas para calcular la correlación.</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
 {% endblock %}
