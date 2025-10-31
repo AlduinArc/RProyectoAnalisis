@@ -1,0 +1,583 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Interfaz</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body { display: flex; height: 100vh; margin: 0; }
+        .menu { width: 250px; background-color: #f8f9fa; padding: 20px; border-right: 1px solid #dee2e6; }
+        .menu h4 { margin-bottom: 20px; }
+        .menu button { margin-bottom: 10px; width: 100%; }
+        .contenido { flex-grow: 1; padding: 20px; overflow-y: auto; }
+                
+        /* Estilo global en modo oscuro */
+        body.dark-mode {
+            background-color: #121212;
+            color: #e0e0e0;
+        }
+
+        /* Menú lateral */
+        body.dark-mode .menu {
+            background-color: #1e1e1e;
+            border-right: 1px solid #333;
+            color: #e0e0e0;
+        }
+
+        /* Contenido */
+        body.dark-mode .contenido {
+            background-color: #181818;
+            color: #e0e0e0;
+        }
+
+        /* Tarjetas */
+        body.dark-mode .card {
+            background-color: #242424;
+            border-color: #333;
+        }
+
+        /* Headers */
+        body.dark-mode .card-header {
+            background-color: #333 !important;
+            color: #fff !important;
+        }
+
+        /* Botones */
+        body.dark-mode .btn-primary {
+            background-color: #3b82f6;
+            border-color: #3b82f6;
+        }
+        body.dark-mode .btn-secondary {
+            background-color: #6b7280;
+            border-color: #6b7280;
+        }
+        body.dark-mode .btn-success {
+            background-color: #22c55e;
+            border-color: #22c55e;
+        }
+        body.dark-mode .btn-danger {
+            background-color: #ef4444;
+            border-color: #ef4444;
+        }
+
+
+    </style>
+</head>
+<body>
+    <div class="menu">
+        <h4>Menú</h4>
+        <button class="btn btn-outline-success btn-cargar" data-url="{% url 'listar_archivos' %}">Gestión de datos</button>
+        <button id="btn-analisis" class="btn btn-outline-success btn-cargar" disabled>Análisis descriptivo</button>
+        <button id="btn-procesar" class="btn btn-outline-success btn-cargar" disabled>Procesamiento</button>
+        <button id="btn-modelar" class="btn btn-outline-success btn-cargar" disabled>Modelado</button>
+        {% if request.user.is_superuser %}
+            <button class="btn btn-danger btn-cargar" data-url="{% url 'panel_admin' %}">
+                🔑 Panel de administración
+            </button>
+        {% endif %}
+
+        <!-- Archivo actualmente seleccionado -->
+        <div class="mt-4">
+            <strong>Archivo actualmente seleccionado:</strong>
+            <p id="archivoActual" class="text-truncate text-muted mb-0">Ninguno</p>
+        </div>
+
+        <div class="flex-grow-1"></div>
+
+        <!-- Botón de logout -->
+        <div class="mt-3">
+            <form id="logoutForm" action="{% url 'logout' %}" method="post">
+                {% csrf_token %}
+                <button type="submit" class="btn btn-danger w-100">
+                    <i class="fas fa-sign-out-alt me-2"></i> Cerrar sesión
+                </button>
+            </form>
+        </div>
+        <a href="/interfaz_test.html" class="btn btn-primary mb-4"> 
+             Subir nuevo archivo 
+        </a>
+
+        <!-- Botón de cambio a modo oscuro -->
+        <div class="form-check form-switch mt-4">
+            <input class="form-check-input" type="checkbox" id="darkModeToggle">
+            <label class="form-check-label" for="darkModeToggle">Modo oscuro</label>
+
+        </div>
+    </div>
+
+    <div class="contenido" id="contenido">
+        <div class="alert alert-info text-center">
+            <h4>Bienvenido al sistema de análisis</h4>
+            <p>Por favor, comienza seleccionando una opción del menú.</p>
+        </div>
+    </div>
+
+    <script>
+    // --- Función para inicializar el envío AJAX del formulario de modelado ---
+    function inicializarEnvioModelado() {
+        const form = document.getElementById("modelForm");
+        if (!form) return; // si aún no hay formulario, salir
+
+        form.addEventListener("submit", function (e) {
+            e.preventDefault();
+            const formData = new FormData(form);
+
+            fetch(form.action, {
+                method: "POST",
+                body: formData,
+                headers: { "X-Requested-With": "XMLHttpRequest" }
+            })
+            .then(response => response.text())
+            .then(html => {
+                const destino = document.getElementById("contenido");
+                destino.innerHTML = html;
+
+                // Re-inicializar tooltips y secciones de configuración
+                setTimeout(() => {
+                    if (typeof inicializarModelado === "function") inicializarModelado();
+                    const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+                    tooltipTriggerList.map(el => new bootstrap.Tooltip(el));
+                    inicializarEnvioModelado(); // <-- reinicia el evento para la nueva vista
+                }, 200);
+
+                console.log("✅ Modelo ejecutado correctamente.");
+            })
+            .catch(err => {
+                console.error("❌ Error al ejecutar el modelo:", err);
+                document.getElementById("contenido").innerHTML =
+                    `<div class='alert alert-danger'>Error al ejecutar el modelo.</div>`;
+            });
+        });
+    }
+
+        // Función para cargar vistas vía AJAX
+        function cargarVista(button) {
+            let url = button.getAttribute("data-url") || button.dataset.url;
+            const id = localStorage.getItem("archivoSeleccionado");
+
+            // Botones principales del menú lateral
+            if (button.id === "btn-analisis") {
+                if (!id) return alert("Debes seleccionar un archivo primero.");
+                url = `/ver/${id}/`;
+            } else if (button.id === "btn-procesar") {
+                if (!id) return alert("Debes seleccionar un archivo primero.");
+                url = `/interfaz_procesamiento/${id}/`;
+            } else if (button.id === "btn-modelar") {
+                if (!id) return alert("Debes seleccionar un archivo primero.");
+                url = `/interfaz_modelado/${id}/`;
+            }
+
+            // Validación final
+            if (!url) {
+                console.error("No se encontró data-url ni coincidió un id reconocido:", button);
+                return;
+            }
+
+            console.log("Cargando vista:", url);
+
+            fetch(url)
+                .then(response => response.text())
+                .then(html => {
+                    const parser = new DOMParser();
+                    const doc = parser.parseFromString(html, 'text/html');
+
+                    // Inserta solo el contenido en el contenedor
+                    const contenido = doc.body.innerHTML;
+                    document.getElementById("contenido").innerHTML = contenido;
+
+                    // Ejecutar scripts embebidos dentro de la vista cargada
+                    const scripts = doc.querySelectorAll("script");
+                    scripts.forEach(oldScript => {
+                        const newScript = document.createElement("script");
+                        if (oldScript.src) {
+                            newScript.src = oldScript.src;
+                        } else {
+                            newScript.textContent = oldScript.textContent;
+                        }
+                        document.body.appendChild(newScript);
+                    });
+
+                    // Si es la vista de modelado, inicializar manualmente
+                    if (url.includes("/interfaz_modelado/")) {
+                        setTimeout(() => {
+                            if (typeof inicializarModelado === "function") {
+                                inicializarModelado();
+                                inicializarEnvioModelado();
+
+                            }
+                        }, 100);
+                    }
+
+                })
+                .catch(error => {
+                    console.error("Error al cargar:", error);
+                    document.getElementById("contenido").innerHTML =
+                        `<div class="alert alert-danger">Error al cargar el contenido.</div>`;
+                });
+
+        }
+
+
+
+        // Asignar eventos a botones del menú
+        // Delegación: captura clicks en TODO el documento y maneja .btn-cargar,
+        // funciona tanto para botones estáticos como para los inyectados por fetch.
+        document.addEventListener('click', function(e) {
+            const btn = e.target.closest('.btn-cargar');
+            if (!btn) return;
+
+            e.preventDefault();            // evita comportamiento por defecto (p.ej. submit)
+            cargarVista(btn);              // tu función existente que usa btn.dataset.url o btn.getAttribute('data-url')
+        });
+
+
+        // Delegación para clicks dinámicos
+        document.addEventListener("click", function (e) {
+            // Selección de archivo
+            if (e.target.classList.contains("seleccionar-archivo")) {
+                e.preventDefault();
+
+                const archivoId = e.target.dataset.id;
+                const archivoNombre = e.target.dataset.nombre || (
+                    e.target.closest('tr') ? e.target.closest('tr').querySelector('td:nth-child(2)').innerText : null
+                );
+
+                if (archivoId) localStorage.setItem("archivoSeleccionado", archivoId);
+                if (archivoNombre) localStorage.setItem("archivoNombre", archivoNombre);
+
+                // Habilitar botones
+                document.getElementById("btn-analisis").disabled = false;
+                document.getElementById("btn-procesar").disabled = false;
+                document.getElementById("btn-modelar").disabled = false;
+
+                // Mostrar nombre en el menú
+                const el = document.getElementById("archivoActual");
+                if (el) el.innerText = archivoNombre || ("ID: " + archivoId);
+
+                // Feedback modal
+                document.getElementById("successMessage").textContent = "Archivo seleccionado: " + (archivoNombre || archivoId);
+                const successModal = new bootstrap.Modal(document.getElementById('successModal'));
+                successModal.show();
+            }
+
+            // Eliminar archivo
+            if (e.target.classList.contains("eliminar-archivo")) {
+                e.preventDefault();
+                if (confirm("¿Estás seguro de eliminar este archivo?")) {
+                    fetch(e.target.href, {
+                        method: 'POST',
+                        headers: {
+                            'X-CSRFToken': '{{ csrf_token }}',
+                            'X-Requested-With': 'XMLHttpRequest'
+                        }
+                    })
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.success) {
+                            document.getElementById("successMessage").textContent = "Archivo eliminado exitosamente";
+                            const successModal = new bootstrap.Modal(document.getElementById('successModal'));
+                            successModal.show();
+
+                            // Recargar lista después de 1s
+                            setTimeout(() => {
+                                cargarVista(document.querySelector(".btn-cargar[data-url='{% url 'listar_archivos' %}']"));
+                            }, 1000);
+                        }
+                    });
+                }
+            }
+        });
+
+        // Mostrar nombre si ya había archivo guardado en localStorage
+        window.addEventListener("load", () => {
+            const id = localStorage.getItem("archivoSeleccionado");
+            const nombre = localStorage.getItem("archivoNombre");
+
+            if (id && nombre) {
+                document.getElementById("btn-analisis").disabled = false;
+                document.getElementById("btn-procesar").disabled = false;
+                document.getElementById("btn-modelar").disabled = false;
+
+                const el = document.getElementById("archivoActual");
+                if (el) el.innerText = nombre;
+            } else {
+                const el = document.getElementById("archivoActual");
+                if (el) el.innerText = "Ninguno";
+            }
+        });
+        
+        function initContenido() {
+            // ejemplo: volver a inicializar tooltips o listeners locales
+            // $('[data-bs-toggle="tooltip"]').tooltip();  // si usas jQuery/Bootstrap tooltips
+            console.log("initContenido: inicializando elementos del HTML cargado");
+        }
+
+
+        // Limpiar localStorage al hacer logout
+        const logoutForm = document.getElementById('logoutForm');
+        if (logoutForm) {
+            logoutForm.addEventListener('submit', function() {
+                localStorage.removeItem('archivoSeleccionado');
+                localStorage.removeItem('archivoNombre');
+                const el = document.getElementById("archivoActual");
+                if (el) el.innerText = "Ninguno";
+            });
+        }
+    </script>
+
+    <!-- Modal de éxito -->
+    <div class="modal fade" id="successModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header bg-success text-white">
+                    <h5 class="modal-title"><i class="fas fa-check-circle me-2"></i>Éxito</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <p id="successMessage">Operación completada exitosamente</p>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-success" data-bs-dismiss="modal">Aceptar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Incluir Bootstrap JS y Font Awesome -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+</body>
+
+<!-- Modal para zoom de imágenes -->
+<div id="imageModal" class="modal" onclick="closeImageModal()">
+    <span class="close">&times;</span>
+    <img class="modal-content" id="modalImage">
+</div>
+
+<style>
+.modal {
+    display: none;
+    position: fixed;
+    z-index: 9999;
+    padding-top: 60px;
+    left: 0; top: 0;
+    width: 100%; height: 100%;
+    overflow: auto;
+    background-color: rgba(0,0,0,0.9);
+}
+.modal-content {
+    margin: auto;
+    display: block;
+    max-width: 95%;
+    max-height: None;
+}
+#imageModal {
+    overflow: auto; 
+}
+.close {
+    position: absolute;
+    top: 15px; right: 35px;
+    color: white;
+    font-size: 40px;
+    font-weight: bold;
+    cursor: pointer;
+}
+.zoom-img {
+    max-width: 250px; 
+    cursor: zoom-in;
+}
+
+</style>
+
+<script>
+    
+function showImageModal(img) {
+    var modal = document.getElementById("imageModal");
+    var modalImg = document.getElementById("modalImage");
+    modal.style.display = "block";
+    modalImg.src = img.src;
+}
+function closeImageModal() {
+    document.getElementById("imageModal").style.display = "none";
+}
+document.getElementById("darkModeToggle").addEventListener("change", function() {
+    document.body.classList.toggle("dark-mode", this.checked);
+    // Guardar preferencia en localStorage
+    localStorage.setItem("darkMode", this.checked);
+});
+
+document.addEventListener("change", function(e) {
+    // 👉 Si cambia el checkbox "seleccionar todos"
+    if (e.target && e.target.id === "checkAll") {
+        const checkboxes = document.querySelectorAll('.archivo-checkbox');
+        checkboxes.forEach(cb => cb.checked = e.target.checked);
+    }
+
+    // 👉 Si cambia un checkbox individual
+    if (e.target && e.target.classList.contains("archivo-checkbox")) {
+        const all = document.querySelectorAll('.archivo-checkbox');
+        const allChecked = Array.from(all).every(cb => cb.checked);
+        document.getElementById("checkAll").checked = allChecked;
+    }
+});
+
+document.addEventListener("change", function(e) {
+    const checkAll = document.getElementById("checkAll");
+    const btnEliminar = document.getElementById("btn-eliminar-multiple");
+    const btnSeleccionar = document.getElementById("btn-seleccionar"); // dale este id al botón azul de "Seleccionar"
+
+    // 👉 Seleccionar/deseleccionar todos
+    if (e.target && e.target.id === "checkAll") {
+        const checkboxes = document.querySelectorAll('.archivo-checkbox');
+        checkboxes.forEach(cb => cb.checked = e.target.checked);
+    }
+
+    // 👉 Si cambia un checkbox individual
+    if (e.target && e.target.classList.contains("archivo-checkbox")) {
+        const all = document.querySelectorAll('.archivo-checkbox');
+        const allChecked = Array.from(all).every(cb => cb.checked);
+        if (checkAll) checkAll.checked = allChecked;
+    }
+
+    // 👉 Mostrar/ocultar botón eliminar múltiple
+    const seleccionados = document.querySelectorAll('.archivo-checkbox:checked').length;
+    if (btnEliminar) {
+        btnEliminar.style.display = seleccionados > 0 ? "inline-block" : "none"; 
+        btnEliminar.innerText = seleccionados > 1
+            ? `Eliminar ${seleccionados} archivos`
+            : "Eliminar 1 archivo";
+    }
+
+    // 👉 Mostrar botón seleccionar (cuando hay exactamente 1 seleccionado)
+    if (btnSeleccionar) {
+        if (seleccionados === 1) {
+            btnSeleccionar.style.display = "inline-block";
+
+            // Guardar en localStorage el archivo marcado
+            const seleccionado = document.querySelector('.archivo-checkbox:checked');
+            const fila = seleccionado.closest("tr");
+            const archivoId = seleccionado.value;
+            const archivoNombre = fila ? fila.querySelector("td:nth-child(3)").innerText : null;
+
+            localStorage.setItem("archivoSeleccionado", archivoId);
+            if (archivoNombre) localStorage.setItem("archivoNombre", archivoNombre);
+        } else {
+            btnSeleccionar.style.display = "none";
+        }
+    }
+});
+
+// Al cargar, aplicar preferencia guardada
+window.addEventListener("load", function() {
+    const darkMode = localStorage.getItem("darkMode") === "true";
+    document.getElementById("darkModeToggle").checked = darkMode;
+    document.body.classList.toggle("dark-mode", darkMode);
+});
+
+function initSeleccionArchivos() {
+    document.addEventListener("change", function(e) {
+        const checkAll = document.getElementById("checkAll");
+        const btnEliminar = document.getElementById("btn-eliminar-multiple");
+        const btnSeleccionar = document.getElementById("btn-seleccionar"); 
+
+        if (!btnSeleccionar) return; // si no existe en la vista cargada, no hace nada
+
+        // 👉 Seleccionar/deseleccionar todos
+        if (e.target && e.target.id === "checkAll") {
+            const checkboxes = document.querySelectorAll('.archivo-checkbox');
+            checkboxes.forEach(cb => cb.checked = e.target.checked);
+        }
+
+        // 👉 Si cambia un checkbox individual
+        if (e.target && e.target.classList.contains("archivo-checkbox")) {
+            const all = document.querySelectorAll('.archivo-checkbox');
+            const allChecked = Array.from(all).every(cb => cb.checked);
+            if (checkAll) checkAll.checked = allChecked;
+        }
+
+        // 👉 Mostrar/ocultar botón eliminar múltiple
+        const seleccionados = document.querySelectorAll('.archivo-checkbox:checked').length;
+        if (btnEliminar) {
+            btnEliminar.style.display = seleccionados > 0 ? "inline-block" : "none"; 
+            btnEliminar.innerText = seleccionados > 1
+                ? `Eliminar ${seleccionados} archivos`
+                : "Eliminar 1 archivo";
+        }
+
+        // 👉 Mostrar botón seleccionar (cuando hay exactamente 1 seleccionado)
+        if (btnSeleccionar) {
+            if (seleccionados === 1) {
+                btnSeleccionar.style.display = "inline-block";
+                const seleccionado = document.querySelector('.archivo-checkbox:checked');
+                const fila = seleccionado.closest("tr");
+                const archivoId = seleccionado.value;
+                const archivoNombre = fila ? fila.querySelector("td:nth-child(3)").innerText : null;
+
+                localStorage.setItem("archivoSeleccionado", archivoId);
+                if (archivoNombre) localStorage.setItem("archivoNombre", archivoNombre);
+            } else {
+                btnSeleccionar.style.display = "none";
+            }
+        }
+    });
+}
+
+
+//nueva parte para la carga de dos modelos
+function inicializarModelado() {
+    const selectModelo = document.getElementById("tipo_modelo");
+    if (!selectModelo) return; // salir si no hay selector
+
+    const configBlock = document.getElementById("config_block");
+    const configTitle = document.getElementById("config_title");
+    const rfConfig = document.getElementById("randomforest_config");
+    const linealConfig = document.getElementById("lineal_config");
+
+    function toggleConfig() {
+        configBlock.style.display = "block";
+        if (selectModelo.value === "randomforest") {
+            configTitle.textContent = "Parámetros RandomForest";
+            rfConfig.style.display = "block";
+            linealConfig.style.display = "none";
+        } else {
+            configTitle.textContent = "Predicción manual";
+            rfConfig.style.display = "none";
+            linealConfig.style.display = "block";
+        }
+    }
+
+    toggleConfig(); // inicializar según estado actual
+    selectModelo.addEventListener("change", toggleConfig);
+}
+
+function updateTestVisual(value) {
+    const testPercent = parseInt(value);
+    const trainPercent = 100 - testPercent;
+
+    // Actualizar texto
+    document.getElementById('testSizeValue').textContent =
+        `${testPercent}% Prueba, ${trainPercent}% Entrenamiento`;
+
+    // Actualizar barras
+    const trainBar = document.getElementById('trainBar');
+    const testBar = document.getElementById('testBar');
+
+    trainBar.style.width = trainPercent + "%";
+    testBar.style.width = testPercent + "%";
+
+    trainBar.textContent = `Entrenamiento: ${trainPercent}%`;
+    testBar.textContent = `Prueba: ${testPercent}%`;
+}
+
+document.addEventListener("DOMContentLoaded", function () {
+    // Activar todos los tooltips de Bootstrap
+    const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+    tooltipTriggerList.map(function (tooltipTriggerEl) {
+        return new bootstrap.Tooltip(tooltipTriggerEl);
+    });
+});
+
+</script>
+
+
+</html>

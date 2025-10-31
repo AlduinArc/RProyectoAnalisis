@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Modelado con Regresión Lineal</title>
+    <a href="{% url 'interfaz' %}" class="btn btn-success">
+                        <-- Volver
+    </a>
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css">
+    <style>
+        .model-results { border-left: 4px solid #0d6efd; }
+        .section-title { border-bottom: 1px solid #dee2e6; padding-bottom: 0.5rem; margin-bottom: 1.5rem; }
+    </style>
+</head>
+<body class="bg-light">
+<div class="container py-5">
+    <div class="row justify-content-center">
+        <div class="col-lg-10">
+            <div class="card shadow-sm">
+                <div class="card-header bg-primary text-white">
+                    <h1 class="h4 mb-0">Interfaz de Modelado - Regresión Lineal</h1>
+                    <p class="mb-0">{{ archivo.nombre }}</p>
+                </div>
+                <div class="card-body">
+                    
+                    <!-- Mensajes -->
+                    {% if messages %}
+                        <div class="mb-4">
+                            {% for message in messages %}
+                                <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
+                                    {{ message }}
+                                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                                </div>
+                            {% endfor %}
+                        </div>
+                    {% endif %}
+
+                    <!-- Formulario -->
+                    <form method="post" action="{% url 'interfaz_modelado_lineal' archivo.id %}">
+                        {% csrf_token %}
+
+                        <!-- Columna objetivo -->
+                        <div class="mb-4">
+                            <h3 class="section-title">1. Columna objetivo</h3>
+                            <select class="form-select" name="columna_objetivo" required>
+                                <option value="" disabled selected>-- Selecciona columna objetivo --</option>
+                                {% for col in columnas %}
+                                    <option value="{{ col }}">{{ col }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+
+                        <!-- Columnas predictoras -->
+                        <div class="mb-4">
+                            <h3 class="section-title">2. Columnas predictoras</h3>
+                            <select class="form-select" name="columnas_predictoras" multiple required>
+                                {% for col in columnas %}
+                                    <option value="{{ col }}">{{ col }}</option>
+                                {% endfor %}
+                            </select>
+                            <small class="text-muted">Mantén presionado Ctrl/Command para selección múltiple</small>
+                        </div>
+
+                        <!-- Valores de entrada -->
+                        <div class="mb-4">
+                            <h3 class="section-title">3. Predicción manual</h3>
+                            <input type="text" class="form-control" name="valor" 
+                                   placeholder="Ej: 1.2, 3.4, 5.6">
+                            <small class="text-muted">Ingresa valores separados por coma según las columnas predictoras</small>
+                        </div>
+
+                        <div class="d-grid">
+                            <button type="submit" class="btn btn-primary btn-lg">
+                                <i class="bi bi-gear-fill"></i> Ejecutar Modelado
+                            </button>
+                        </div>
+                    </form>
+
+                    <!-- Resultados -->
+                    {% if modelo_info %}
+                        <div class="mt-5 p-4 model-results bg-white rounded shadow-sm">
+                            <h3 class="section-title text-primary">Resultados del Modelo</h3>
+                            <p>{{ modelo_info }}</p>
+
+                            {% if metricas %}
+                                <p><strong>MAE:</strong> {{ metricas.mae }}</p>
+                                <p><strong>R²:</strong> {{ metricas.r2 }}</p>
+                            {% endif %}
+
+                            {% if scatter_img %}
+                                <div class="text-center mt-4">
+                                    <h3 class="section-title text-info">Comparación Real vs Predicho</h3>
+                                    <img src="data:image/png;base64,{{ scatter_img }}" 
+                                         class="img-fluid rounded shadow" alt="Scatter plot">
+                                </div>
+                            {% endif %}
+                        </div>
+                    {% endif %}
+                </div>
+                <div class="card-footer text-center text-muted">
+                    <small>Sistema de modelado - Regresión Lineal</small>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- JS -->
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

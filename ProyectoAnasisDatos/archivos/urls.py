@@ -9,11 +9,14 @@ urlpatterns = [
     
     # Autenticación
     path('login/', views.login_view, name='login'),
-    path('register/', views.register, name='register'),
+    
     path('logout/', views.custom_logout, name='logout'),  # Vista de logout incorporada
     
     # Vistas protegidas
     path('dashboard/', views.interfaz, name='interfaz'),  # Mueve la interfaz a /dashboard/
+    path("panel-admin/", views.panel_admin, name="panel_admin"),
+
+
     path('subir/', views.subir_archivo, name='subir_archivo'),
     path('listar/', views.listar_archivos, name='listar_archivos'),
     path('analizar/<int:archivo_id>/', views.analizar_archivo, name='analizar_archivo'),
@@ -37,11 +40,13 @@ urlpatterns = [
     path('aplicar_normalizacion/<int:id>/', views.aplicar_normalizacion, name='aplicar_normalizacion'),
     
     path('prueba_modelado_randomforest/<int:id>/', views.prueba_modelado_randomforest, name='prueba_modelado_randomforest'),
-    path('descargar_predicciones/<int:id>/', views.descargar_predicciones, name='descargar_predicciones'),
+    
 
     path('ver_columnas_nulas/<int:id>/', views.ver_columnas_nulas, name='ver_columnas_nulas'),
     path('confirmar_eliminacion_columnas_nulas/<int:id>/', views.confirmar_eliminacion_columnas_nulas, name='confirmar_eliminacion_columnas_nulas'),
     path('grafica/<int:id>/', views.ver_grafica, name='ver_grafica'),
 
-    
+    path("eliminar-multiple/", views.eliminar_multiple, name="eliminar_multiple"),
+
+    path('interfaz_modelado_lineal/<int:id>/', views.interfaz_modelado_lineal, name='interfaz_modelado_lineal'),
 ]

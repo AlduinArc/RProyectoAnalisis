@@ -1,71 +1,66 @@
-<!DOCTYPE html>
-<html lang="es">
-<head>
-    <meta charset="UTF-8">
-    <title>Ver Archivo - {{ archivo.nombre }}</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
-</head>
-<body class="bg-light">
-    <div class="container mt-4">
-        <h2>Archivo: {{ archivo.nombre }}</h2>
 
-        <div class="mb-3">
-            <p><strong>Valores nulos:</strong> {{ nulos }}</p>
-            <p><strong>Valores cero:</strong> {{ ceros }}</p>
-        </div>
-        <div class="mb-3">
+<!--<div class="container mt-4 text-center">
+    <h2>Descripcion del archivo: {{ archivo.nombre }}</h2>
+<div class="container text-center mt-3">-->
+    
+
+    <div class="mb-3">
+        {% if request.GET.completo == "1" %}
+            <button type="button" class="btn btn-primary btn-cargar"
+                    data-url="/ver/{{ archivo.id }}">
+                Volver a la vista pricipal
+            </button>
+        
+
+        {% endif %}
+        
+        {% if request.GET.completo == "1" %}
+
+        {% else %}
+            
+        <!-- Botón que carga via fetch -->
+        <button type="button" class="btn btn-dark btn-cargar" data-url="/analisis_grafico/{{ archivo.id }}/">
+            Gráficos
+        </button>
+        <a href="{% url 'analisis_grafico' archivo.id %}" class="btn btn-success">
+            Graficos-Funcional
+        </a>
+
+
+        <a href="{% url 'test_graficos' archivo.id %}" class="btn btn-success">
+            Test Gráficos
+        </a>
+        {% endif %}
+    </div>
+
+    <h4>Vista previa del archivo</h4>
+    <div class="table-responsive" style="max-height: 500px; overflow-x: auto; overflow-y: auto; white-space: nowrap;">
+        {{ df|safe }}
+    </div>
+
     {% if request.GET.completo == "1" %}
-        <a href="{% url 'interfaz' %}" class="btn btn-secondary me-2">
-            Volver a vista previa
-        </a>
+        <p>Fin de la tabla</p>
     {% else %}
-        <a href="{% url 'ver_archivo' archivo.id %}?completo=1" class="btn btn-primary me-2">
-            Ver tabla completa
-        </a>
-    {% endif %}
-    <a href="{% url 'analisis_grafico' archivo.id %}" class="btn btn-dark">
-        Apartado de Gráficos
-    </a>
-    
-
-    <a href="{% url 'test_graficos' archivo.id %}" class="btn btn-success">
-        Test Gráficos
-    </a>
-    
-
-</div>
-
-        <h4>Vista previa del archivo</h4>
-        
-        
-        <div class="table-responsive" style="max-height: 500px; overflow-x: auto; overflow-y: auto; white-space: nowrap;">
-            {{ df|safe }}
-        </div>
-
-         <!-- Boton de activacion -->
-        <!--<div class="mb-3">
-            {% if request.GET.ocultar %}
-                <a href="{% url 'ver_archivo' archivo.id %}?completo={{ request.GET.completo }}" class="btn btn-warning">
-                    Mostrar columnas con count 0.0
-                </a>
-            {% else %}
-                <a href="{% url 'ver_archivo' archivo.id %}?completo={{ request.GET.completo }}&ocultar=1" class="btn btn-warning">
-                    Ocultar columnas con count 0.0
-                </a>
-            {% endif %}
-        </div>-->
-        <!-- Análisis descriptivo -->
+        <button type="button" class=" btn btn-primary btn-cargar float-end mb-4"
+                    data-url="/ver/{{ archivo.id }}/?completo=1">
+                Ver tabla completa
+        </button>
         <h4 class="mt-4">Análisis descriptivo</h4>
         <p>Resumen estadístico de las columnas numéricas del archivo:</p>
+        <div class="row justify-content-center">
+            <div class="col-auto">
+                <p><strong>Valores nulos:</strong> {{ nulos }}</p>
+            </div>
+            <div class="col-auto">
+                <p><strong>Valores cero:</strong> {{ ceros }}</p>
+            </div>
+        </div>
         <p class="small text-muted mt-2">
-            <strong>Nota:</strong> Recordar que el procesamiento se hace con formato americano, es decir, usando <strong>puntos (.)</strong> como separador decimal. En caso de ser diferente, modifica los separadores en la seccion guiada por el boton 'Modificar Archivo'.
+            <strong>Nota:</strong> Recordar que el procesamiento se hace con formato americano, 
+            es decir, usando <strong>puntos (.)</strong> como separador decimal.
         </p>
         <div class="table-responsive" style="max-height: 500px; overflow-x: auto; overflow-y: auto; white-space: nowrap;">
             {{ descripcion|safe }}
         </div>
-
-
-
-    </div>
-</body>
-</html>
+    {% endif %}
+</div>

@@ -3,311 +3,510 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Modelado con RandomForest</title>
+    <title>Modelado</title>
     <a href="{% url 'prueba_modelado_randomforest' archivo.id %}" class="btn btn-success">
                         Prueba modelado
     </a>
-    <!-- Bootstrap CSS -->
+    <a href="{% url 'interfaz_modelado_lineal' archivo.id %}" class="btn btn-success">
+                        Modelo Lineal
+    </a>
+    <a href="{% url 'interfaz_modelado' archivo.id %}" class="btn btn-success">
+                        Temp Pantalla completa
+    </a>
+    
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet">
-    <!-- DataTables CSS -->
-    <link rel="stylesheet" href="https://cdn.datatables.net/1.13.4/css/dataTables.bootstrap5.min.css">
-    <!-- Bootstrap Icons -->
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css">
-    <style>
-        .feature-item {
-            display: flex;
-            justify-content: space-between;
-            margin-bottom: 5px;
-            padding: 8px;
-            background-color: #f8f9fa;
-            border-radius: 4px;
-        }
-        .feature-name { font-weight: bold; color: #212529; }
-        .feature-value { color: #0d6efd; font-weight: 500; }
-        .model-results { border-left: 4px solid #0d6efd; }
-        .file-title { color: #6c757d; font-size: 1.1rem; }
-        .section-title { border-bottom: 1px solid #dee2e6; padding-bottom: 0.5rem; margin-bottom: 1.5rem; }
-        .form-section { margin-bottom: 2rem; background-color: #f8f9fa; padding: 1.5rem; border-radius: 0.5rem; }
-        .multi-select { min-height: 200px; }
-        .prediction-table { overflow-x: auto; }
-        .toggle-predictions { cursor: pointer; }
-    </style>
+        <!-- Scripts de Bootstrap necesarios para tooltips -->
+    <script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.11.8/dist/umd/popper.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/js/bootstrap.bundle.min.js"></script>
+
 </head>
 <body class="bg-light">
 <div class="container py-5">
-    <div class="row justify-content-center">
-        <div class="col-lg-12">
-            <div class="card shadow-sm">
-                <div class="card-header bg-primary text-white">
-                    <h1 class="h4 mb-0">Interfaz de Modelado con RandomForest</h1>
-                    <p class="file-title mb-0">{{ archivo.nombre }}</p>
-                </div>
-                
-                <div class="card-body">
-                    <!-- Mensajes -->
-                    {% if messages %}
-                        <div class="mb-4">
-                            {% for message in messages %}
-                                <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
-                                    {{ message }}
-                                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-                                </div>
-                            {% endfor %}
-                        </div>
-                    {% endif %}
+    <div class="card shadow-sm">
+        <div class="card-header bg-primary text-white">
+            <h1 class="h4 mb-0" id="titulo_modelo">
+                {% if tipo_modelo == "randomforest" %}
+                    Interfaz de Modelado - RandomForest
+                {% else %}
+                    Interfaz de Modelado - Regresión Lineal
+                {% endif %}
+            </h1>
+            <p class="mb-0">{{ archivo.nombre }}</p>
+        </div>
 
-                    <!-- Formulario -->
-                    <form method="post" action="{% url 'interfaz_modelado' archivo.id %}" id="modelForm">
-                        {% csrf_token %}
 
-                        <!-- Columna objetivo -->
-                        <div class="form-section">
-                            <h3 class="section-title">1. Columna objetivo</h3>
-                            <select class="form-select form-select-lg mb-3" name="columna_objetivo" required>
-                                <option value="" disabled selected>-- Selecciona columna objetivo --</option>
-                                {% for col in columnas %}
-                                    <option value="{{ col }}">{{ col }}</option>
-                                {% endfor %}
+        <div class="card-body">
+            <!-- Formulario -->
+            <form method="post" action="{% url 'interfaz_modelado' archivo.id %}" id="modelForm">
+            {% csrf_token %}
+
+            <!-- Selector de modelo -->
+            <div class="mb-4">
+                <h3 class="section-title text-center"  >Tipo de modelo</h3>
+                <select class="form-select" id="tipo_modelo" name="tipo_modelo" required>
+                    <option value="randomforest" {% if tipo_modelo == "randomforest" %}selected{% endif %}>
+                        Random Forest
+                    </option>
+                    <option value="lineal" {% if tipo_modelo == "lineal" %}selected{% endif %}>
+                        Regresión Lineal
+                    </option>
+                </select>
+            </div>
+
+            
+            <!-- Configuración específica -->
+            <div id="config_block" class="mb-4">
+                <h3 class="section-title text-center" id="config_title"></h3>
+
+                <div id="randomforest_config" style="display:none;">
+                    <!-- n_estimators y max_depth juntos -->
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label for="nEstimators" class="form-label">
+                                Número de árboles (n_estimators)
+                                <span class="text-info" data-bs-toggle="tooltip"
+                                    title="Cantidad de árboles en el bosque. Más árboles mejoran la precisión pero aumentan el tiempo de entrenamiento.">❔</span>
+                            </label>
+                            <select name="n_estimators" id="nEstimators" class="form-select">
+                                <option value="50">50</option>
+                                <option value="100" selected>100</option>
+                                <option value="200">200</option>
+                                <option value="500">500</option>
                             </select>
                         </div>
 
-                        <!-- Columnas predictoras -->
-                        <div class="form-section">
-                            <h3 class="section-title">2. Columnas predictoras</h3>
-                            <select class="form-select multi-select" name="columnas_predictoras" multiple required id="columnasPredictoras">
-                                {% for col in columnas %}
-                                    <option value="{{ col }}">{{ col }}</option>
-                                {% endfor %}
-                            </select>
-                            <small class="text-muted">Ctrl/Command para selección múltiple</small>
+                        <div class="col-md-6 mb-3">
+                            <label for="maxDepth" class="form-label">
+                                Máxima profundidad (max_depth)
+                                <span class="text-info" data-bs-toggle="tooltip"
+                                    title="Profundidad máxima de cada árbol. Limitarla puede evitar sobreajuste (overfitting).">❔</span>
+                            </label>
+                            <input type="number" class="form-control" id="maxDepth" name="max_depth" min="1" placeholder="None">
+                            <div class="form-text">Déjalo vacío para usar None (sin límite).</div>
                         </div>
-
-                        <!-- Valores de entrada -->
-                        <div class="form-section">
-                            <h3 class="section-title">3. Opciones de predicción</h3>
-                            <div class="row mb-3">
-                                <div class="col-md-6">
-                                    <label for="valoresInput" class="form-label">Valores individuales:</label>
-                                    <input type="text" class="form-control" id="valoresInput" name="valor" placeholder="Ej: 1.2, 3.4, 5.6">
-                                </div>
-                                <div class="col-md-6">
-                                    <div class="form-check form-switch mt-4">
-                                        <input class="form-check-input" type="checkbox" id="predecirColumna" name="predecir_columna">
-                                        <label class="form-check-label" for="predecirColumna">Predecir toda la columna</label>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- Predicción parcial -->
-                        
-                        <div class="form-section">
-                            <h3 class="section-title">4. Predicción parcial</h3>
-                            <div class="form-check form-switch mb-3">
-                                <input class="form-check-input" type="checkbox" id="predecirParcial" name="predecir_parcial">
-                                <label class="form-check-label" for="predecirParcial">Activar predicción parcial</label>
-                            </div>
-
-                            <!-- Tamaño de test -->
-                            <div class="mb-3">
-                                <label for="testSize" class="form-label">Tamaño de test (%):</label>
-                                <input type="range" class="form-range" id="testSize" name="test_size"
-                                    min="5" max="50" step="1" value="20" oninput="updateTestSize(this.value)">
-                                <div class="form-text" id="testSizeValue">20% test, 80% entrenamiento</div>
-                            </div>
-
-                            <!-- Número de estimadores -->
-                            <div class="mb-3">
-                                <label for="nEstimators" class="form-label">Número de árboles (n_estimators):</label>
-                                <select class="form-select" id="nEstimators" name="n_estimators">
-                                    <option value="10">10</option>
-                                    <option value="50">50</option>
-                                    <option value="100" selected>100</option>
-                                    <option value="200">200</option>
-                                    <option value="500">500</option>
-                                </select>
-                            </div>
-
-                            <!-- Random state split -->
-                            <div class="mb-3">
-                                <label for="randomStateSplit" class="form-label">Random state (split):</label>
-                                <input type="number" class="form-control" id="randomStateSplit"
-                                    name="random_state_split" min="0" max="100" value="42">
-                            </div>
-
-                            <!-- Random state modelo -->
-                            <div class="mb-3">
-                                <label for="randomStateModel" class="form-label">Random state (modelo):</label>
-                                <input type="number" class="form-control" id="randomStateModel"
-                                    name="random_state_model" min="0" max="100" value="42">
-                            </div>
-                        </div>
-
-
-                        <div class="d-grid gap-2">
-                            <button type="submit" class="btn btn-primary btn-lg">
-                                <i class="bi bi-gear-fill"></i> Ejecutar Modelado
-                            </button>
-                        </div>
-                    </form>
-                    
-                    <!-- Gráficos comparativos -->
-                    {% if scatter_img or displot_img %}
-                        <div class="mt-5 p-4 model-results bg-white rounded shadow-sm">
-                            <div class="row text-center">
-                                
-                                <!-- Gráfico scatter -->
-                                {% if scatter_img %}
-                                    <div class="col-md-6 mb-4">
-                                        <h3 class="section-title text-info">Comparación Real vs Predicho</h3>
-                                        <img src="data:image/png;base64,{{ scatter_img }}" 
-                                            class="img-fluid rounded shadow" 
-                                            alt="Scatter plot"
-                                            width="600" height="400">
-                                    </div>
-                                {% endif %}
-
-                                <!-- Gráfico displot -->
-                                {% if displot_img %}
-                                    <div class="col-md-6 mb-4">
-                                        <h3 class="section-title text-warning">Distribución Real vs Predicho</h3>
-                                        <img src="data:image/png;base64,{{ displot_img }}" 
-                                            class="img-fluid rounded shadow" 
-                                            alt="Displot comparación"
-                                            width="600" height="400">
-                                    </div>
-                                {% endif %}
-
-                            </div>
-                        </div>
-                    {% endif %}
-
-                    <!-- Resultados predicción parcial -->
-                    {% if df_parcial_predicciones is not None %}
-                        <div class="mt-5 p-4 model-results bg-white rounded shadow-sm">
-                            <h3 class="section-title text-success">Resultados Predicción Parcial</h3>
-                            <p>
-                                <strong>Total filas:</strong> {{ total_filas }} <br>
-                                <strong>Conocidas:</strong> {{ conocidos_filas }} <br>
-                                <strong>Predichas:</strong> {{ predichos_filas }}
-                            </p>
-                            {% if error_promedio %}
-                                <p><strong>Error promedio:</strong> {{ error_promedio }}</p>
-                            {% endif %}
-                            {% if accuracy_parcial %}
-                                <p><strong>Accuracy parcial:</strong> {{ accuracy_parcial }}%</p>
-                            {% endif %}
-                            <h5 class="toggle-predictions" data-bs-toggle="collapse" href="#collapsePartial">
-                                <i class="bi bi-chevron-down"></i> Ver resultados parciales
-                            </h5>
-                            <div class="collapse" id="collapsePartial">
-                                <div class="prediction-table">
-                                    {{ df_parcial_predicciones.to_html|safe }}
-                                </div>
-                            </div>
-                        </div>
-                    {% endif %}
-
-                    <!--Cross-Correlation-->
-                    
-                    <div class="form-section">
-                        <h3 class="section-title">📊 Análisis de Correlación</h3>
-                        
-                        <div class="alert alert-info">
-                            <strong>Análisis automático de correlación:</strong> Se ejecuta automáticamente al procesar el modelo
-                        </div>
-
-                        {% if crosscorrelation_img %}
-                            <div class="mt-5 p-4 model-results bg-white rounded shadow-sm text-center">
-                                <h3 class="section-title text-primary">Crosscorrelation Real vs Predicho</h3>
-                                <p>Este gráfico muestra la correlación entre los valores reales y los predichos en un 50% seleccionado de forma completamente aleatoria.</p>
-                                <img src="data:image/png;base64,{{ crosscorrelation_img }}" 
-                                    class="img-fluid rounded shadow" 
-                                    alt="Crosscorrelation plot"
-                                    width="600" height="400">
-                            </div>
-                        {% endif %}
-
-
-                        {% if not crosscorrelation_img %}
-                        <div class="alert alert-warning">
-                            <i class="bi bi-info-circle"></i> Los gráficos de correlación aparecerán después de ejecutar el modelo
-                        </div>
-                        {% endif %}
                     </div>
 
-                    <!-- Resultados del modelo -->
-                    {% if modelo_info %}
-                        <div class="mt-5 p-4 model-results bg-white rounded shadow-sm">
-                            <h3 class="section-title text-primary">Resultados Modelo</h3>
-                            <p>{{ modelo_info }}</p>
-                            {% if metricas %}
-                                <p><strong>Tipo:</strong> {{ metricas.tipo }}</p>
-                                {% if es_clasificacion %}
-                                    <p><strong>Accuracy:</strong> {{ metricas.accuracy }}</p>
-                                {% else %}
-                                    <p><strong>MAE:</strong> {{ metricas.mae }}</p>
-                                    <p><strong>R²:</strong> {{ metricas.r2 }}</p>
-                                {% endif %}
+                    <!-- min_samples_split y min_samples_leaf juntos -->
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label for="minSamplesSplit" class="form-label">
+                                Mínimo de muestras para split (min_samples_split)
+                                <span class="text-info" data-bs-toggle="tooltip"
+                                    title="Número mínimo de muestras requeridas para dividir un nodo. Valores altos reducen la profundidad del árbol.">❔</span>
+                            </label>
+                            <input type="number" class="form-control" id="minSamplesSplit" name="min_samples_split" min="2" value="2">
+                        </div>
+
+                        <div class="col-md-6 mb-3">
+                            <label for="minSamplesLeaf" class="form-label">
+                                Mínimo de muestras en hoja (min_samples_leaf)
+                                <span class="text-info" data-bs-toggle="tooltip"
+                                    title="Número mínimo de muestras en una hoja terminal. Útil para suavizar el modelo.">❔</span>
+                            </label>
+                            <input type="number" class="form-control" id="minSamplesLeaf" name="min_samples_leaf" min="1" value="1">
+                        </div>
+                    </div>
+                    <!-- Semillas aleatorias -->
+                    <h5 class="section-title text-center mt-4">Semillas aleatorias</h5>
+                    <div class="row">
+                        <!-- Random state (split) -->
+                        <div class="col-md-6 mb-3">
+                            <label for="randomStateSplit" class="form-label">
+                                Random state (split)
+                                <span class="text-info" data-bs-toggle="tooltip"
+                                    title="Controla la aleatoriedad al dividir el dataset en entrenamiento y prueba. Fijarlo permite obtener siempre la misma división al repetir el entrenamiento.">❔</span>
+                            </label>
+                            <input type="number" class="form-control" id="randomStateSplit" name="random_state_split" min="0" value="42">
+                            <div class="form-text">Semilla de aleatoriedad usada en la división train/test.</div>
+                        </div>
+
+                        <!-- Random state (modelo) -->
+                        <div class="col-md-6 mb-3">
+                            <label for="randomStateModel" class="form-label">
+                                Random state (modelo)
+                                <span class="text-info" data-bs-toggle="tooltip"
+                                    title="Controla la aleatoriedad interna del algoritmo RandomForest, como el muestreo de datos y selección de características. Útil para resultados reproducibles.">❔</span>
+                            </label>
+                            <input type="number" class="form-control" id="randomStateModel" name="random_state_model" min="0" value="42">
+                            <div class="form-text">Semilla interna usada dentro del modelo RandomForest.</div>
+                        </div>
+                    </div>
+
+
+                    <!-- Tamaño de test -->
+                    <div class="mb-3">
+                        <label for="testSize" class="form-label fw-bold">
+                            División del dataset
+
+                            <span class="text-info" data-bs-toggle="tooltip"
+              title="Porcentaje de datos reservados para prueba. El resto se usa para entrenamiento.">❔</span>
+                        </label>
+
+                        <div class="progress" style="height: 25px; position: relative;">
+                            <div id="trainBar" 
+                                class="progress-bar bg-success" 
+                                style="width: 80%;">
+                                Entrenamiento: 80%
+                            </div>
+                            <div id="testBar" 
+                                class="progress-bar bg-warning text-dark" 
+                                style="width: 20%;">
+                                Prueba: 20%
+                            </div>
+                        </div>
+
+                        <input type="range" 
+                            class="form-range mt-3" 
+                            id="testSize" 
+                            name="test_size"
+                            min="5" max="50" step="1" value="20" 
+                            oninput="updateTestVisual(this.value)">
+                        <div class="form-text text-center" id="testSizeValue">20% Prueba, 80% entrenamiento</div>
+                    </div>
+
+
+                    
+                </div>
+            </div>
+
+                <div id="lineal_config" style="display:none;">
+                    <!-- Valores manuales -->
+                    <div class="mb-3">
+                        <label for="valoresInput" class="form-label">Valores individuales:</label>
+                        <input type="text" class="form-control" id="valoresInput" name="valor"
+                            placeholder="Ej: 1.2, 3.4, 5.6">
+                        <small class="text-muted">Ingresa valores separados por coma</small>
+                    </div>
+
+                    <!-- Parámetro n_jobs -->
+                    <div class="mb-3">
+                        <label for="n_jobs" class="form-label">
+                            Número de núcleos (n_jobs)
+
+                            <span class="text-info" data-bs-toggle="tooltip"
+          title="Número de núcleos de CPU usados para cálculo paralelo. -1 usa todos los disponibles.">❔</span>
+                        </label>
+                        <select class="form-select" id="n_jobs" name="n_jobs">
+                            <option value="" selected>Automático (por defecto)</option>
+                            <option value="1">1 (ejecución secuencial)</option>
+                            <option value="-1">-1 (usar todos los núcleos disponibles)</option>
+                            <option value="2">2 núcleos</option>
+                            <option value="4">4 núcleos</option>
+                        </select>
+                        <small class="text-muted">Controla cuántos núcleos del procesador usar.</small>
+                    </div>
+                </div>
+
+            </div>
+
+            <!-- Columna objetivo -->
+            <div class="mb-4">
+                <h3 class="section-title text-center">Columna objetivo</h3>
+                <select class="form-select" name="columna_objetivo" required>
+                    <option value="" disabled selected>-- Selecciona columna objetivo --</option>
+                    {% for col in columnas %}
+                        <option value="{{ col }}"
+                            {% if col == columna_objetivo %}selected{% endif %}>
+                            {{ col }}
+                        </option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <!-- Columnas predictoras -->
+            <div class="mb-4">
+                <h3 class="section-title text-center">Columnas predictoras</h3>
+                <div class="form-check">
+                    {% for col in columnas %}
+                        <div class="form-check">
+                            <input 
+                                class="form-check-input" 
+                                type="checkbox" 
+                                name="columnas_predictoras" 
+                                value="{{ col }}" 
+                                id="columna_{{ forloop.counter }}"
+                                {% if col in columnas_predictoras %}checked{% endif %}>
+                            <label class="form-check-label" for="columna_{{ forloop.counter }}">
+                                {{ col }}
+                            </label>
+                        </div>
+                    {% endfor %}
+                </div>
+            </div>
+
+
+            
+            <div class="d-grid">
+                <button type="submit" class="btn btn-primary btn-lg">
+                    <i class="bi bi-gear-fill"></i> Ejecutar Modelado
+                </button>
+            </div>
+        </form>
+        {% if request.user.is_superuser %}
+        <details class="mt-4">
+            <summary class="fw-bold text-danger">⚙️ Mostrar información de depuración</summary>
+            <div class="mt-2 ms-3">
+                <p>DEBUG modelo_info: {{ modelo_info }}</p>
+                <p>DEBUG metricas: {{ metricas }}</p>
+                <p>DEBUG scatter: {{ scatter_img|yesno:"sí,no" }}</p>
+                <p>DEBUG displot: {{ displot_img|yesno:"sí,no" }}</p>
+                <p>DEBUG df_predicciones: {{ df_predicciones|default:"None" }}</p>
+            </div>
+        </details>
+        {% endif %}
+
+            <!-- Resultados del modelo 
+            
+                <div class="mt-5 p-4 model-results bg-white rounded shadow-sm">
+                    <h3 class="section-title text-primary">Resultados Modelo</h3>
+                    <p>{{ modelo_info }}</p>
+
+                    {% if metricas %}
+                        <div class="mb-4">
+                            <p><strong>Tipo:</strong> {{ metricas.tipo }}</p>
+
+                            {% if es_clasificacion %}
+                                <p><strong>Accuracy:</strong> {{ metricas.accuracy|floatformat:3 }}</p>
+                            {% else %}
+                                <p><strong>MAE:</strong> {{ metricas.mae|floatformat:4 }}</p>
+                                <p><strong>R²:</strong> {{ metricas.r2|floatformat:4 }}</p>
                             {% endif %}
-                            {% if df_predicciones %}
-                                <h5 class="toggle-predictions" data-bs-toggle="collapse" href="#collapsePredicciones">
-                                    <i class="bi bi-chevron-down"></i> Ver predicciones
-                                </h5>
-                                <div class="collapse" id="collapsePredicciones">
-                                    <div class="prediction-table">{{ df_predicciones|safe }}</div>
-                                    <form method="post" action="{% url 'descargar_predicciones' archivo.id %}" class="mt-3">
-                                        {% csrf_token %}
-                                        <input type="hidden" name="datos_predicciones" value="{{ df_predicciones }}">
-                                        <button type="submit" class="btn btn-success">
-                                            <i class="bi bi-download"></i> Descargar
-                                        </button>
-                                    </form>
-                                </div>
+                        </div>
+
+                        {% if metricas.best_params %}
+                            <h6>Mejores parámetros (GridSearchCV):</h6>
+                            <ul>
+                                {% for key, value in metricas.best_params.items %}
+                                    <li><strong>{{ key }}:</strong> {{ value }}</li>
+                                {% endfor %}
+                            </ul>
+                            <p><strong>Mejor score promedio (GridSearchCV):</strong> {{ metricas.best_score|floatformat:4 }}</p>
+                        {% endif %}
+
+                        {% if metricas.cv_mean %}
+                            <p><strong>Cross-validation (media):</strong> {{ metricas.cv_mean|floatformat:4 }}</p>
+                        {% endif %}
+                        {% if metricas.cv_std %}
+                            <p><strong>Cross-validation (desviación):</strong> {{ metricas.cv_std|floatformat:4 }}</p>
+                        {% endif %}
+                    {% endif %}-->
+                <!-- Resultados del modelo -->
+                <div class="mt-5 p-4 model-results bg-white rounded shadow-sm">
+                    <h3 class="section-title text-primary">Resultados Modelo</h3>
+                    <p>{{ modelo_info|default:"(sin información del modelo)" }}</p>
+
+                    {% if metricas %}
+                        <div class="mb-4">
+                            <p><strong>Tipo:</strong> {{ metricas.tipo }}</p>
+                            <p><strong>MAE:</strong> {{ metricas.mae|floatformat:4 }}</p>
+                            <p><strong>R²:</strong> {{ metricas.r2|floatformat:4 }}</p>
+
+                            <!-- Mostrar parámetros usados -->
+                            <h6>Hyperparametros del modelo:</h6>
+                            <ul>
+                                <li><strong>n_estimators:</strong> {{ metricas.n_estimators }}</li>
+                                <li><strong>max_depth:</strong> {{ metricas.max_depth|default:"None" }}</li>
+                                <li><strong>min_samples_split:</strong> {{ metricas.min_samples_split }}</li>
+                                <li><strong>min_samples_leaf:</strong> {{ metricas.min_samples_leaf }}</li>
+                                <li><strong>test_size:</strong> {{ metricas.test_size_percent }}%</li>
+                                <li><strong>random_state (split):</strong> {{ metricas.random_state_split }}</li>
+                                <li><strong>random_state (modelo):</strong> {{ metricas.random_state_model }}</li>
+                            </ul>
+
+                            <!-- Importancia de variables -->
+                            {% if metricas.features_importances %}
+                                <h6>Importancia de Variables:</h6>
+                                <ul>
+                                    {% for feature, importance in metricas.features_importances %}
+                                        <li>{{ feature }}: {{ importance|floatformat:3 }}</li>
+                                    {% endfor %}
+                                </ul>
                             {% endif %}
                         </div>
                     {% endif %}
                 </div>
-                <div class="card-footer text-muted text-center">
-                    <small>Sistema de modelado - RandomForest</small>
+
+                    <!-- Tabla de predicciones -->
+                    {% if df_predicciones %}
+                        <h5 class="toggle-predictions mt-4" data-bs-toggle="collapse" href="#collapsePredicciones">
+                            <i class="bi bi-chevron-down"></i> Ver predicciones
+                        </h5>
+                        <div class="collapse" id="collapsePredicciones">
+                            <div class="prediction-table bg-white rounded shadow-sm p-3 mt-3">
+                                {{ df_predicciones|safe }}
+                            </div>
+                        </div>
+                    {% endif %}
+                </div>
+            
+
+
+                <!-- Gráficos -->
+                <div class="row text-center mt-4">
+                    {% if scatter_img %}
+                        <div class="col-md-6 mb-4">
+                            <h5 class="text-info">Scatter Real vs Predicho</h5>
+                            <img src="data:image/png;base64,{{ scatter_img }}" 
+                                class="img-fluid rounded shadow zoom-img" 
+                                onclick="showImageModal(this)">
+                        </div>
+                    {% endif %}
+                    {% if displot_img %}
+                        <div class="col-md-6 mb-4">
+                            <h5 class="text-warning">Distribución Real vs Predicho</h5>
+                            <img src="data:image/png;base64,{{ displot_img }}" 
+                                class="img-fluid rounded shadow zoom-img" 
+                                onclick="showImageModal(this)">
+                        </div>
+                    {% endif %}
+                </div>
+
+                <!-- Extras -->
+                <div class="row text-center mt-4">
+                    {% if crosscorrelation_img %}
+                        <div class="col-md-4 mb-4">
+                            <h6>Crosscorrelation</h6>
+                            <img src="data:image/png;base64,{{ crosscorrelation_img }}" 
+                                class="img-fluid rounded shadow zoom-img"
+                                onclick="showImageModal(this)">
+                        </div>
+                    {% endif %}
+                    {% if learning_curve_img %}
+                        <div class="col-md-4 mb-4">
+                            <h6>Curva de Aprendizaje</h6>
+                            <img src="data:image/png;base64,{{ learning_curve_img }}" 
+                                class="img-fluid rounded shadow zoom-img"
+                                onclick="showImageModal(this)">
+                        </div>
+                    {% endif %}
+                    {% if feature_importances_img %}
+                        <div class="col-md-4 mb-4">
+                            <h6>Importancia de Variables</h6>
+                            <img src="data:image/png;base64,{{ feature_importances_img }}" 
+                                class="img-fluid rounded shadow zoom-img"
+                                onclick="showImageModal(this)">
+                        </div>
+                    {% endif %}
                 </div>
             </div>
+            
+
+
         </div>
     </div>
 </div>
 
-<!-- JS -->
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/js/bootstrap.bundle.min.js"></script>
-<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
-<script src="https://cdn.datatables.net/1.13.4/js/jquery.dataTables.min.js"></script>
-<script src="https://cdn.datatables.net/1.13.4/js/dataTables.bootstrap5.min.js"></script>
+<style>
+.progress-bar {
+    transition: width 0.3s ease-in-out;
+    font-weight: 600;
+    font-size: 0.9rem;
+}
+.text-info[data-bs-toggle="tooltip"] {
+    cursor: help;
+    font-weight: bold;
+    margin-left: 4px;
+}
+.text-info[data-bs-toggle="tooltip"]:hover {
+    color: #0d6efd;
+}
+</style>
+
+
 <script>
-    $(document).ready(function() {
-        $('.table').DataTable({
-            responsive: true,
-            pageLength: 10,
-            language: { url: '//cdn.datatables.net/plug-ins/1.13.4/i18n/es-ES.json' }
-        });
-        $('#columnasPredictoras').change(function() {
-            const selected = Array.from($(this).val() || []);
-            if (selected.length > 0) {
-                $('#valoresInput').attr('placeholder', `Ej: ${selected.map(() => '0.0').join(', ')}`);
+document.addEventListener("submit", function(e) {
+    if (e.target && e.target.id === "modelForm") {
+        e.preventDefault(); // Evita recarga tradicional
+        const form = e.target;
+        const formData = new FormData(form);
+
+        fetch(form.action, {
+            method: "POST",
+            body: formData,
+            headers: {
+                "X-Requested-With": "XMLHttpRequest"
             }
+        })
+        .then(response => response.text())
+        .then(html => {
+            // Reemplazar el contenido de la vista actual
+            document.getElementById("contenido").innerHTML = html;
+
+            // Volver a inicializar scripts
+            if (typeof inicializarModelado === "function") {
+                setTimeout(inicializarModelado, 100);
+            }
+
+            // Mostrar mensaje visual
+            const successModal = new bootstrap.Modal(document.getElementById('successModal'));
+            document.getElementById("successMessage").textContent = "Modelo ejecutado correctamente";
+            successModal.show();
+        })
+        .catch(err => {
+            console.error("Error al ejecutar el modelo:", err);
+            document.getElementById("contenido").innerHTML =
+                `<div class="alert alert-danger">Error al ejecutar el modelo.</div>`;
         });
-        $('.toggle-predictions').click(function() {
-            $(this).find('i').toggleClass('bi-chevron-down bi-chevron-up');
-        });
-    });
-    function updatePercentageValue(value) {
-        document.getElementById('percentageValue').textContent =
-            value + '% entrenamiento, ' + (100 - value) + '% predicción';
     }
-    function updateTestSize(value) {
-    document.getElementById('testSizeValue').textContent =
-        value + '% test, ' + (100 - value) + '% entrenamiento';
+});
+
+document.addEventListener("DOMContentLoaded", function () {
+    const selectModelo = document.getElementById("tipo_modelo");
+    const configBlock = document.getElementById("config_block");
+    const configTitle = document.getElementById("config_title");
+    const rfConfig = document.getElementById("randomforest_config");
+    const linealConfig = document.getElementById("lineal_config");
+
+    function toggleConfig() {
+        configBlock.style.display = "block";
+        if (selectModelo.value === "randomforest") {
+            configTitle.textContent = "Hyperparametros RandomForest";
+            rfConfig.style.display = "block";
+            linealConfig.style.display = "none";
+        } else {
+            configTitle.textContent = "Hyperparametros Regresión Lineal";
+            rfConfig.style.display = "none";
+            linealConfig.style.display = "block";
+        }
     }
 
+    // inicializar según valor actual
+    toggleConfig();
+
+    // escuchar cambios
+    selectModelo.addEventListener("change", toggleConfig);
+});
+
+
+function updateTestVisual(value) {
+    const testPercent = parseInt(value);
+    const trainPercent = 100 - testPercent;
+
+    // Actualizar texto
+    document.getElementById('testSizeValue').textContent =
+        `${testPercent}% Prueba, ${trainPercent}% Entrenamiento`;
+
+    // Actualizar barras
+    const trainBar = document.getElementById('trainBar');
+    const testBar = document.getElementById('testBar');
+
+    trainBar.style.width = trainPercent + "%";
+    testBar.style.width = testPercent + "%";
+
+    trainBar.textContent = `Entrenamiento: ${trainPercent}%`;
+    testBar.textContent = `Prueba: ${testPercent}%`;
+}
+document.addEventListener("DOMContentLoaded", function () {
+    // Activar todos los tooltips de Bootstrap
+    const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+    tooltipTriggerList.map(function (tooltipTriggerEl) {
+        return new bootstrap.Tooltip(tooltipTriggerEl);
+    });
+});
 
 </script>
+
+
+
 </body>
 </html>

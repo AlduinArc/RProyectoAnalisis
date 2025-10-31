@@ -1,38 +1,400 @@
 <div class="container mt-3">
-    <h2 class="mb-4">Listado de archivos</h2>
-    
-    <!-- Botón para subir archivos -->
-    <a href="/subir" class="btn btn-primary mb-4">
-        <i class="fas fa-upload"></i> Subir nuevo archivo
+    <a href="/subir" class="btn btn-primary mb-4"> 
+        <i class="fas fa-upload"></i> Subir nuevo archivo 
     </a>
 
     {% if archivos %}
-    <div class="table-responsive">
-        <table class="table table-bordered table-hover bg-white">
-            <thead class="table-light">
-                <tr>
-                    <th>ID</th>
-                    <th>Nombre</th>
-                    <th>Fecha de Subida</th>
-                    <th>Acciones</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for archivo in archivos %}
-                <tr>
-                    <td>{{ archivo.id }}</td>
-                    <td>{{ archivo.nombre }}</td>
-                    <td>{{ archivo.fecha_subida }}</td>
-                    <td>
-                        <a href="#" class="btn btn-sm btn-info seleccionar-archivo" data-id="{{ archivo.id }}">Seleccionar</a>
-                        <a href="{% url 'eliminar_archivo' archivo.id %}" class="btn btn-sm btn-danger eliminar-archivo">Eliminar</a>
-                    </td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
-    </div>
+        <form id="form-eliminar" method="post" action="{% url 'eliminar_multiple' %}">
+            {% csrf_token %}
+            <div class="table-responsive">
+                <table class="table table-bordered table-hover bg-white">
+                    <thead class="table-light">
+                        <tr>
+                            <th><input type="checkbox" id="checkAll"></th>
+                            <th>ID</th>
+                            <th>Nombre</th>
+                            <th>Fecha de Subida</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for archivo in archivos %}
+                        <tr>
+                            <td><input type="checkbox" class="archivo-checkbox" name="archivos" value="{{ archivo.id }}"></td>
+                            <td>{{ archivo.id }}</td>
+                            <td class="archivo-nombre">{{ archivo.nombre }}</td>
+                            <td>{{ archivo.fecha_subida }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Botones -->
+            <div class="text-center mt-3">
+                <button type="button" id="btn-eliminar-multiple" class="btn btn-danger" style="display:none;">
+                    <i class="fas fa-trash-alt"></i> Eliminar seleccionados
+                </button>
+                <button type="button" id="btn-renombrar" class="btn btn-warning" style="display:none;">
+                    <i class="fas fa-edit"></i> Renombrar archivo
+                </button>
+                <button type="button" id="btn-seleccionar" class="btn btn-info" style="display:none;" onclick="mostrarPopupSeleccion()">
+                    <i class="fas fa-check"></i> Seleccionar archivo
+                </button>
+            </div>
+        </form>
     {% else %}
         <div class="alert alert-info">No hay archivos subidos aún.</div>
     {% endif %}
 </div>
+
+<!-- Modal de éxito -->
+<div class="modal fade" id="modalExito" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header bg-success text-white">
+        <h5 class="modal-title">✅ Éxito</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <p id="mensajeExito">Operación realizada correctamente.</p>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-success" data-bs-dismiss="modal">Aceptar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+<style>
+        :root {
+            --primary-color: #3498db;
+            --primary-dark: #2980b9;
+            --secondary-color: #f8f9fa;
+            --accent-color: #e74c3c;
+            --text-color: #333;
+            --border-color: #e1e5e9;
+            --success-color: #2ecc71;
+        }
+        
+        body {
+            background-color: #f5f7fa;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            color: var(--text-color);
+        }
+        
+        .header-bar {
+            background: linear-gradient(135deg, var(--primary-color), var(--primary-dark));
+            color: white;
+            padding: 1.5rem 0;
+            margin-bottom: 2rem;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+        }
+        
+        .header-content {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .page-title {
+            font-weight: 600;
+            margin: 0;
+            font-size: 1.8rem;
+        }
+        
+        .upload-btn {
+            background-color: white;
+            color: var(--primary-color);
+            border: none;
+            padding: 0.6rem 1.2rem;
+            border-radius: 30px;
+            font-weight: 600;
+            transition: all 0.3s ease;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        }
+        
+        .upload-btn:hover {
+            background-color: var(--secondary-color);
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        }
+        
+        .upload-btn i {
+            margin-right: 8px;
+        }
+        
+        .card-container {
+            background-color: white;
+            border-radius: 12px;
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+            overflow: hidden;
+            margin-bottom: 2rem;
+        }
+        
+        .card-header {
+            background-color: var(--secondary-color);
+            padding: 1rem 1.5rem;
+            border-bottom: 1px solid var(--border-color);
+            font-weight: 600;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .file-count {
+            background-color: var(--primary-color);
+            color: white;
+            border-radius: 20px;
+            padding: 0.2rem 0.8rem;
+            font-size: 0.85rem;
+        }
+        
+        .table-responsive {
+            border-radius: 0 0 12px 12px;
+            overflow: hidden;
+        }
+        
+        .table {
+            margin-bottom: 0;
+        }
+        
+        .table thead th {
+            background-color: #f1f5f9;
+            border-bottom: 2px solid var(--border-color);
+            font-weight: 600;
+            padding: 1rem;
+            color: #4a5568;
+        }
+        
+        .table tbody td {
+            padding: 1rem;
+            vertical-align: middle;
+            border-color: var(--border-color);
+        }
+        
+        .table tbody tr {
+            transition: background-color 0.2s ease;
+        }
+        
+        .table tbody tr:hover {
+            background-color: #f8fafc;
+        }
+        
+        .file-name {
+            font-weight: 500;
+            color: #2d3748;
+        }
+        
+        .file-date {
+            color: #718096;
+            font-size: 0.9rem;
+        }
+        
+        .file-id {
+            color: #718096;
+            font-weight: 500;
+        }
+        
+        .checkbox-cell {
+            width: 40px;
+        }
+        
+        .action-buttons {
+            display: flex;
+            gap: 0.5rem;
+            margin-top: 1rem;
+            justify-content: center;
+        }
+        
+        .btn-danger {
+            background-color: var(--accent-color);
+            border: none;
+            border-radius: 6px;
+            padding: 0.5rem 1.2rem;
+            font-weight: 500;
+        }
+        
+        .btn-info {
+            background-color: var(--primary-color);
+            border: none;
+            border-radius: 6px;
+            padding: 0.5rem 1.2rem;
+            font-weight: 500;
+        }
+        
+        .empty-state {
+            text-align: center;
+            padding: 3rem 2rem;
+            color: #718096;
+        }
+        
+        .empty-state i {
+            font-size: 3rem;
+            margin-bottom: 1rem;
+            color: #cbd5e0;
+        }
+        
+        .form-check-input:checked {
+            background-color: var(--primary-color);
+            border-color: var(--primary-color);
+        }
+        
+        .modal-content {
+            border-radius: 12px;
+            border: none;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.15);
+        }
+        
+        .modal-header {
+            background-color: var(--secondary-color);
+            border-bottom: 1px solid var(--border-color);
+            border-radius: 12px 12px 0 0;
+        }
+        
+        .modal-title {
+            font-weight: 600;
+            color: var(--text-color);
+        }
+        
+        .modal-footer {
+            border-top: 1px solid var(--border-color);
+        }
+        
+        @media (max-width: 768px) {
+            .header-content {
+                flex-direction: column;
+                gap: 1rem;
+                text-align: center;
+            }
+            
+            .action-buttons {
+                flex-direction: column;
+            }
+            
+            .action-buttons .btn {
+                width: 100%;
+            }
+        }
+</style>
+
+<script>
+// === Modal de éxito ===
+function popupExito(mensaje = "Archivos eliminados correctamente") {
+    document.getElementById("mensajeExito").textContent = mensaje;
+    const modal = new bootstrap.Modal(document.getElementById("modalExito"));
+    modal.show();
+
+    const modalEl = document.getElementById("modalExito");
+    modalEl.addEventListener("hidden.bs.modal", function eliminarYRecargar() {
+        document.getElementById("form-eliminar").submit();
+        modalEl.removeEventListener("hidden.bs.modal", eliminarYRecargar);
+    });
+}
+
+// === Popup de selección ===
+function mostrarPopupSeleccion() {
+    const seleccionado = document.querySelector('.archivo-checkbox:checked');
+    if (!seleccionado) return;
+
+    const fila = seleccionado.closest("tr");
+    const archivoId = seleccionado.value;
+    const archivoNombre = fila ? fila.querySelector("td:nth-child(3)").innerText : null;
+
+    // Guardar selección
+    localStorage.setItem("archivoSeleccionado", archivoId);
+    if (archivoNombre) localStorage.setItem("archivoNombre", archivoNombre);
+
+    // Mostrar modal de éxito en selección
+    const mensaje = `Archivo seleccionado: ${archivoNombre || 'ID ' + archivoId}`;
+    document.getElementById("mensajeExito").textContent = mensaje;
+    const modal = new bootstrap.Modal(document.getElementById("modalExito"));
+    modal.show();
+}
+
+// === Selección múltiple y control de botones ===
+document.addEventListener("change", function(e) {
+    const checkAll = document.getElementById("checkAll");
+    const btnEliminar = document.getElementById("btn-eliminar-multiple");
+    const btnSeleccionar = document.getElementById("btn-seleccionar");
+    const btnRenombrar = document.getElementById("btn-renombrar");
+
+    // Seleccionar/deseleccionar todos
+    if (e.target && e.target.id === "checkAll") {
+        const checkboxes = document.querySelectorAll('.archivo-checkbox');
+        checkboxes.forEach(cb => cb.checked = e.target.checked);
+    }
+
+    // Si cambia un checkbox individual
+    if (e.target && e.target.classList.contains("archivo-checkbox")) {
+        const all = document.querySelectorAll('.archivo-checkbox');
+        const allChecked = Array.from(all).every(cb => cb.checked);
+        if (checkAll) checkAll.checked = allChecked;
+    }
+
+    // Contar seleccionados
+    const seleccionados = document.querySelectorAll('.archivo-checkbox:checked').length;
+
+    // Mostrar/ocultar botones según cantidad
+    if (btnEliminar) {
+        btnEliminar.style.display = seleccionados > 0 ? "inline-block" : "none"; 
+        btnEliminar.innerText = seleccionados > 1
+            ? `Eliminar ${seleccionados} archivos`
+            : "Eliminar 1 archivo";
+    }
+    if (btnSeleccionar) btnSeleccionar.style.display = seleccionados === 1 ? "inline-block" : "none";
+    if (btnRenombrar) btnRenombrar.style.display = seleccionados === 1 ? "inline-block" : "none";
+});
+
+// === Confirmación antes de eliminar ===
+document.getElementById("btn-eliminar-multiple").addEventListener("click", function() {
+    const seleccionados = document.querySelectorAll('.archivo-checkbox:checked');
+    if (seleccionados.length === 0) return;
+
+    const mensaje = seleccionados.length === 1 
+        ? "¿Seguro que deseas eliminar este archivo?"
+        : `¿Seguro que deseas eliminar ${seleccionados.length} archivos?`;
+
+    if (confirm(mensaje)) {
+        document.getElementById("form-eliminar").submit();
+    }
+});
+
+// === Renombrar archivo ===
+document.getElementById("btn-renombrar").addEventListener("click", async function() {
+    const seleccionado = document.querySelector('.archivo-checkbox:checked');
+    if (!seleccionado) return;
+
+    const fila = seleccionado.closest("tr");
+    const id = seleccionado.value;
+    const nombreActual = fila.querySelector("td:nth-child(3)").innerText;
+
+    const nuevoNombre = prompt("Nuevo nombre para el archivo:", nombreActual);
+    if (!nuevoNombre || nuevoNombre.trim() === nombreActual.trim()) return;
+
+    try {
+        const response = await fetch(`/renombrar/${id}/`, {
+            method: "POST",
+            headers: {
+                "X-CSRFToken": "{{ csrf_token }}",
+                "X-Requested-With": "XMLHttpRequest",
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify({ nuevo_nombre: nuevoNombre.trim() })
+        });
+
+        if (response.ok) {
+            fila.querySelector("td:nth-child(3)").innerText = nuevoNombre.trim();
+            popupExito("Archivo renombrado correctamente.");
+        } else {
+            alert("Error al renombrar el archivo.");
+        }
+    } catch (error) {
+        console.error("Error:", error);
+        alert("Error al comunicarse con el servidor.");
+    }
+});
+</script>
+

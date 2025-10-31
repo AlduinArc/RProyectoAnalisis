@@ -38,7 +38,10 @@
                 <option value="line" {% if tipo == "line" %}selected{% endif %}>Línea</option>
                 <option value="bar" {% if tipo == "bar" %}selected{% endif %}>Barras</option>
                 <option value="pie" {% if tipo == "pie" %}selected{% endif %}>Torta</option>
+                <option value="hist" {% if tipo == "hist" %}selected{% endif %}>Histograma</option>
+                <option value="box" {% if tipo == "box" %}selected{% endif %}>Boxplot</option>
             </select>
+
         </div>
         <div class="col-md-2">
             <button type="submit" class="btn btn-primary w-100">Actualizar gráfica</button>

@@ -1,90 +1,124 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-    <meta charset="UTF-8">
-    <title>Análisis múltiple de gráficos - {{ archivo.nombre }}</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
-    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+  <meta charset="UTF-8">
+  <title>Análisis gráfico - C3ML</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 </head>
-<body class="bg-light">
+<body>
 
 <div class="container mt-3">
-    <a href="{% url 'interfaz' %}" class="btn btn-secondary">
-        ← Volver al inicio
-    </a>
-    <a href="{% url 'temp_analisis_grafico' archivo.id %}" class="btn btn-success">
-        Gráficos principales
-    </a>
+  <button type="button" class="btn btn-primary btn-cargar" data-url="/ver/{{ archivo.id }}">
+    ← Volver al inicio.
+  </button>
+  
 </div>
 
 <div class="container mt-5">
-    <h2 class="mb-4">Análisis múltiple del archivo: <strong>{{ archivo.nombre }}</strong></h2>
+  <h2 class="mb-4">Análisis gráfico del archivo: <strong>{{ archivo.nombre }}</strong></h2>
 
-    {% if error %}
-        <div class="alert alert-danger">{{ error }}</div>
-    {% endif %}
+  <!-- Botón para mostrar modal -->
+  <div class="mb-3">
+    <button class="btn btn-outline-primary" data-bs-toggle="modal" data-bs-target="#modalFormulario">
+      ➕ Agregar gráfico
+    </button>
+  </div>
 
-    <form id="analisis-form" class="row g-3 align-items-end mb-4">
-        <div class="col-md-6">
-            <label class="form-label">Selecciona las columnas (Ctrl o Shift para varias)</label>
-            <select name="columnas" id="columnas" class="form-select" multiple>
-                {% for col in columnas %}
-                    <option value="{{ col }}">{{ col }}</option>
-                {% endfor %}
-            </select>
+  <!-- Área donde se insertarán los gráficos -->
+  <div id="contenedor-analisis-grafica" class="row gy-4"></div>
+</div>
+
+<!-- Modal -->
+<div class="modal fade" id="modalFormulario" tabindex="-1" aria-labelledby="modalFormularioLabel" aria-hidden="true">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <form id="form-grafico">
+        <div class="modal-header">
+          <h5 class="modal-title" id="modalFormularioLabel">Seleccionar gráfico</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
         </div>
-        <div class="col-md-4">
+        <div class="modal-body row g-3">
+          <div class="col-md-6">
+            <label class="form-label">Eje X</label>
+            <select name="x" class="form-select" required>
+              {% for col in columnas %}
+              <option value="{{ col }}">{{ col }}</option>
+              {% endfor %}
+            </select>
+          </div>
+
+          <div class="col-md-6">
             <label class="form-label">Tipo de gráfico</label>
-            <select name="tipo" id="tipo" class="form-select">
-                <option value="hist">Histograma</option>
-                <option value="box">Boxplot</option>
-                <option value="pie">Torta</option>
+            <select name="tipo" class="form-select" required>
+              <option value="hist">Histograma</option>
+              <option value="box">Boxplot</option>
+              <option value="pie">Gráfico de torta</option>
+              <option value="bar">Barras</option>
+              <option value="line">Línea (Tendencia)</option>
             </select>
-        </div>
-        <div class="col-md-2">
-            <button type="submit" class="btn btn-primary w-100">Generar gráficos</button>
-        </div>
-    </form>
+          </div>
 
-    <div id="contenedor-graficos" class="d-flex flex-row flex-nowrap overflow-auto gap-3">
-        <!-- Aquí se mostrarán los gráficos generados -->
+
+          <div class="col-12">
+            <label class="form-label">Variables Y (selección múltiple)</label>
+            <div class="border rounded p-2" style="max-height: 200px; overflow-y: auto;">
+              {% for col in columnas %}
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" name="y" value="{{ col }}" id="y_{{ forloop.counter }}">
+                <label class="form-check-label" for="y_{{ forloop.counter }}">{{ col }}</label>
+              </div>
+              {% endfor %}
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+            <button type="button" id="btn-generar" class="btn btn-primary">Generar gráfico</button>
+        </div>
+
+      </form>
     </div>
+  </div>
 </div>
 
 <script>
-$(document).ready(function() {
-    $('#analisis-form').on('submit', function(e) {
-        e.preventDefault();
+document.addEventListener("DOMContentLoaded", function () {
+  const form = document.getElementById("form-grafico");
+  const btnGenerar = document.getElementById("btn-generar");
 
-        $('#contenedor-graficos').html('<div class="text-center"><div class="spinner-border text-primary" role="status"><span class="visually-hidden">Cargando...</span></div></div>');
+  btnGenerar.addEventListener("click", function () {
+    const formData = new FormData(form);
+    const params = new URLSearchParams(formData);
+    const url = window.location.pathname + "?" + params.toString();
 
-        let columnasSeleccionadas = $('#columnas').val();
-        let tipo = $('#tipo').val();
+    const graficaContainer = document.createElement("div");
+    graficaContainer.className = "col-12 text-center mb-4";
+    graficaContainer.innerHTML = `
+      <div class="spinner-border text-primary" role="status">
+        <span class="visually-hidden">Cargando...</span>
+      </div>`;
+    document.getElementById("contenedor-analisis-grafica").appendChild(graficaContainer);
 
-        $.ajax({
-            url: window.location.pathname,
-            type: 'GET',
-            data: {
-                'columnas': columnasSeleccionadas,
-                'tipo': tipo
-            },
-            traditional: true,
-            dataType: 'json',
-            headers: { 'X-Requested-With': 'XMLHttpRequest' },
-            success: function(response) {
-                if (response.html) {
-                    $('#contenedor-graficos').html(response.html);
-                } else {
-                    $('#contenedor-graficos').html('<div class="alert alert-warning">No se pudieron generar los gráficos.</div>');
-                }
-            },
-            error: function(xhr, status, error) {
-                $('#contenedor-graficos').html('<div class="alert alert-danger">Error: ' + error + '</div>');
-            }
-        });
-    });
+    fetch(url, {
+      headers: { "X-Requested-With": "XMLHttpRequest" }
+    })
+      .then(response => response.json())
+      .then(data => {
+        if (data.html) {
+          graficaContainer.outerHTML = data.html;
+          const modalEl = document.getElementById("modalFormulario");
+          const modal = bootstrap.Modal.getInstance(modalEl);
+          modal.hide();
+        } else {
+          graficaContainer.outerHTML = `<div class="alert alert-warning">No se pudieron generar los gráficos.</div>`;
+        }
+      })
+      .catch(error => {
+        graficaContainer.outerHTML = `<div class="alert alert-danger">Error al generar los gráficos: ${error}</div>`;
+      });
+  });
 });
-</script>
 
+</script>
 </body>
 </html>

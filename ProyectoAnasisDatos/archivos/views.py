@@ -36,10 +36,11 @@ from django.template.loader import render_to_string
 from django.contrib import messages
 from django.contrib.auth import authenticate, login as auth_login
 from django.views.decorators.cache import never_cache
-from django.contrib.auth.decorators import login_required
+from django.contrib.auth.decorators import login_required, user_passes_test
 from django.contrib.auth.models import User
 from django.contrib.auth.forms import UserCreationForm
 from django.views.decorators.csrf import csrf_protect
+from django.views.decorators.http import require_POST
 from django.db import IntegrityError
 from django import forms
 from django.contrib.auth.forms import UserCreationForm
@@ -129,20 +130,29 @@ def landing_page(request):
 @login_required
 def subir_archivo(request):
     if request.method == 'POST':
-        form = ArchivoForm(request.POST, request.FILES)
-        if form.is_valid():
-            form.save()
-            messages.success(request, "Archivo subido exitosamente")  # <-- Añade esta línea
-            if request.headers.get('x-requested-with') == 'XMLHttpRequest':
-                return JsonResponse({'success': True})  # Opcional para AJAX
-            return redirect('interfaz')  # Redirige a donde necesites
-            
-    else:
-        form = ArchivoForm()
+        archivo = request.FILES.get("archivo")
+        nombre = request.POST.get("nombre", "").strip()
 
-    if request.headers.get('x-requested-with') == 'XMLHttpRequest':
-        return render(request, 'partials/subir_contenido.html', {'form': form})
-    return render(request, 'subir_archivo.html', {'form': form})
+        if archivo:
+            # Si no se escribió un nombre, usar el nombre del archivo subido
+            if not nombre:
+                nombre = os.path.basename(archivo.name)
+
+            nuevo_archivo = ArchivoSubido(nombre=nombre, archivo=archivo)
+            nuevo_archivo.save()
+
+            messages.success(request, f"Archivo '{nuevo_archivo.nombre}' subido exitosamente")
+
+            if request.headers.get('x-requested-with') == 'XMLHttpRequest':
+                return JsonResponse({'success': True, 'nombre': nuevo_archivo.nombre})
+
+            return redirect('interfaz')  # Redirige al dashboard principal
+        else:
+            messages.error(request, "Debes seleccionar un archivo válido.")
+
+    return render(request, 'subir_archivo.html')
+
+
 
 @login_required
 def listar_archivos(request):
@@ -197,6 +207,7 @@ def ver_archivo(request, id):
             ceros = (df == 0).sum().sum()
             columnas = df.columns.tolist()
 
+            # --- Preparar gráfico simple (puedes quitar si no usas) ---
             x_col = request.GET.get('x', columnas[0])
             y_col = request.GET.get('y', columnas[1] if len(columnas) > 1 else columnas[0])
 
@@ -207,7 +218,8 @@ def ver_archivo(request, id):
             if not df_grafico.empty:
                 df_grafico.plot(x=x_col, y=y_col, ax=ax)
             else:
-                ax.text(0.5, 0.5, "No hay datos válidos para graficar", ha='center', va='center', transform=ax.transAxes)
+                ax.text(0.5, 0.5, "No hay datos válidos para graficar", 
+                        ha='center', va='center', transform=ax.transAxes)
 
             filename = f"{uuid.uuid4()}.png"
             ruta_imagen = os.path.join(settings.MEDIA_ROOT, filename)
@@ -215,13 +227,10 @@ def ver_archivo(request, id):
             plt.close(fig)
             url_imagen = settings.MEDIA_URL + filename
 
-            # Aquí siempre generamos el análisis descriptivo
-            # Filtrar solo columnas numéricas
+            # --- Análisis descriptivo ---
             df_numerico = df.select_dtypes(include='number')
             descripcion = df_numerico.describe()
 
-
-            # Filtrar si se solicita ocultar columnas con count = 0.0
             if request.GET.get('ocultar') == '1':
                 descripcion = descripcion.loc[:, descripcion.loc['count'] != 0.0]
 
@@ -229,7 +238,7 @@ def ver_archivo(request, id):
                 classes="table table-striped table-bordered"
             )
 
-
+            # --- Tabla completa o preview ---
             with pd.option_context('display.max_rows', None, 'display.max_columns', None):
                 if request.GET.get('completo') == '1':
                     tabla_html = df.to_html(classes="table table-striped table-bordered")
@@ -246,9 +255,16 @@ def ver_archivo(request, id):
                 'columnas': columnas
             }
 
+            # --- AJAX: solo devolver partials ---
             if request.headers.get('x-requested-with') == 'XMLHttpRequest':
-                return render(request, 'partials/ver_contenido.html', contexto)
+                if request.GET.get('completo') == '1':
+                    # Solo tabla completa
+                    return render(request, 'partials/tabla_completa.html', {'df': tabla_html})
+                else:
+                    # Vista previa y análisis
+                    return render(request, 'partials/ver_contenido.html', contexto)
 
+            # --- Render normal ---
             return render(request, 'ver_archivo.html', contexto)
 
         except Exception as e:
@@ -257,6 +273,7 @@ def ver_archivo(request, id):
                 'columnas': [],
                 'error': str(e)
             })
+
 
 
 @login_required
@@ -273,52 +290,65 @@ def ver_grafica(request, id):
     error = None
 
     try:
-        if x and y and x in df.columns and y in df.columns:
-            fig, ax = plt.subplots(figsize=(10, 6))  # mejor tamaño
-            
-            # Preprocesar columnas
-            df = df[[x, y]].dropna()
+        fig, ax = plt.subplots(figsize=(10, 6))
 
-            # Convertir Y a numérico si es posible
+        # 🔹 Histograma o Boxplot — solo requieren una columna
+        if tipo in ['hist', 'box'] and y and y in df.columns:
             df[y] = pd.to_numeric(df[y], errors='coerce')
-            
+            df = df[[y]].dropna()
+
+            if tipo == 'hist':
+                df[y].plot.hist(ax=ax, bins=30, color='skyblue')
+                ax.set_title(f"Histograma de {y}")
+                ax.set_xlabel(y)
+                ax.set_ylabel("Frecuencia")
+
+            elif tipo == 'box':
+                df[[y]].plot.box(ax=ax)
+                ax.set_title(f"Boxplot de {y}")
+
+        # 🔹 Gráficos con X e Y
+        elif x and y and x in df.columns and y in df.columns:
+            df = df[[x, y]].dropna()
+            df[y] = pd.to_numeric(df[y], errors='coerce')
+
             if tipo == 'line':
-                df_sorted = df.sort_values(by=x)  # ordenar para gráfico de línea
+                df_sorted = df.sort_values(by=x)
                 ax.plot(df_sorted[x], df_sorted[y], marker='o')
-                ax.set_title(f'Tendencia: {y} vs {x}')
+                ax.set_title(f"Tendencia: {y} vs {x}")
                 ax.set_xlabel(x)
                 ax.set_ylabel(y)
 
             elif tipo == 'bar':
-                # Si x tiene pocos valores únicos, usar groupby
                 if df[x].nunique() < 30:
                     df_grouped = df.groupby(x)[y].mean().reset_index()
                     ax.bar(df_grouped[x], df_grouped[y])
-                    ax.set_title(f'Bar chart: {y} promedio por {x}')
+                    ax.set_title(f"Barras: promedio de {y} por {x}")
                     ax.set_xlabel(x)
-                    ax.set_ylabel(f'{y} (promedio)')
+                    ax.set_ylabel(f"{y} (promedio)")
                 else:
-                    raise ValueError("Demasiados valores únicos para gráfico de barras. Elija otra columna para X.")
+                    raise ValueError("Demasiados valores únicos en X para gráfico de barras.")
 
             elif tipo == 'pie':
-                # Pie chart solo si Y es categórica o pocos valores únicos
                 if df[y].nunique() < 20:
-                    df_counts = df[y].value_counts()
-                    df_counts.plot.pie(ax=ax, autopct='%1.1f%%', startangle=90)
+                    conteo = df[y].value_counts().head(10)
+                    conteo.plot.pie(ax=ax, autopct='%1.1f%%', startangle=90)
                     ax.set_ylabel('')
-                    ax.set_title(f'Pie chart de {y}')
+                    ax.set_title(f"Torta de {y}")
                 else:
                     raise ValueError("Gráfico de torta solo disponible para columnas con pocos valores únicos.")
-            
             else:
-                raise ValueError("Tipo de gráfico no válido")
+                raise ValueError("Tipo de gráfico no válido.")
 
-            buf = BytesIO()
-            plt.tight_layout()
-            plt.savefig(buf, format='png')
-            plt.close(fig)
-            grafico_url = 'data:image/png;base64,' + base64.b64encode(buf.getvalue()).decode()
-            buf.close()
+        else:
+            raise ValueError("Selecciona correctamente las columnas X e Y o solo Y según el tipo de gráfico.")
+
+        buf = BytesIO()
+        plt.tight_layout()
+        plt.savefig(buf, format='png')
+        plt.close(fig)
+        grafico_url = 'data:image/png;base64,' + base64.b64encode(buf.getvalue()).decode()
+        buf.close()
 
     except Exception as e:
         error = str(e)
@@ -338,6 +368,7 @@ def ver_grafica(request, id):
         return JsonResponse({'html': html})
 
     return render(request, 'ver_grafica.html', context)
+
 
 
 @login_required
@@ -382,6 +413,16 @@ def analisis_grafico(request, id):
                         ax.pie(conteo, labels=conteo.index, autopct='%1.1f%%')
                         ax.set_title(f"Gráfico de torta de {col}")
                         ax.set_ylabel("")
+                    elif tipo == 'bar':
+                        conteo = df[col].value_counts().head(15)
+                        ax.bar(conteo.index, conteo.values)
+                        ax.set_title(f"Gráfico de barras de {col}")
+                        ax.set_xticklabels(conteo.index, rotation=45, ha='right')
+                    elif tipo == 'line':
+                        df[col].dropna().reset_index(drop=True).plot(ax=ax)
+                        ax.set_title(f"Gráfico de línea de {col}")
+                        ax.set_xlabel("Índice")
+                        ax.set_ylabel(col)
                     else:
                         continue
 
@@ -1011,8 +1052,11 @@ def interfaz_procesamiento(request, id):
 
     boxplot = generar_boxplot(df)
     tendencia = generar_tendencia(df)
-    comparativo_boxplot = None
+    
     correlacion_img = generar_matriz_correlacion(df)
+
+    comparativo_boxplot = None
+    comparativo_correlacion = None
 
     mensaje = None
     nuevo_archivo = None
@@ -1031,6 +1075,7 @@ def interfaz_procesamiento(request, id):
 
                 # Generar el boxplot del archivo original
                 comparativo_boxplot = generar_boxplot(df_original)
+                comparativo_correlacion = generar_matriz_correlacion(df_original)
         except Exception as e:
             print("[ERROR] Al generar boxplot del archivo original:", e)
 
@@ -1042,6 +1087,8 @@ def interfaz_procesamiento(request, id):
 
             df_filtrado = df.copy()
             sufijos = []
+            mensaje = None
+            nuevo_archivo = None
 
             if operacion == "eliminar_negativos":
                 for col in columnas:
@@ -1093,6 +1140,8 @@ def interfaz_procesamiento(request, id):
                 nuevo_archivo.save()
                 mensaje = f"Operación aplicada. Nuevo archivo: {nuevo_archivo.nombre}"
                 
+                return redirect('interfaz')
+                
 
 
 
@@ -1106,6 +1155,8 @@ def interfaz_procesamiento(request, id):
         'nuevo_archivo': nuevo_archivo,
         'comparativo_boxplot': comparativo_boxplot,
         'correlacion_img': correlacion_img,
+        'comparativo_correlacion': comparativo_correlacion,
+    
     }
     return render(request, 'interfaz_procesamiento.html', context)
 
@@ -1293,14 +1344,626 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import io, base64
 import seaborn as sns
+
+import json
+from io import StringIO
 #nueva parte
 import statsmodels
 from statsmodels.graphics.tsaplots import plot_acf, plot_pacf
 import warnings
 warnings.filterwarnings('ignore')
-import json
-from io import StringIO
+#cross validation y learning curve
+from sklearn.model_selection import cross_val_score
+from sklearn.model_selection import learning_curve
+#Grid mejores valores para las variables
+from sklearn.model_selection import GridSearchCV
 
+from sklearn.model_selection import cross_val_score
+from sklearn.metrics import classification_report, accuracy_score, mean_absolute_error, r2_score
+from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
+from sklearn.linear_model import LinearRegression
+
+
+def interfaz_modelado(request, id):
+    archivo = get_object_or_404(ArchivoSubido, id=id)
+    modelo_info = None
+    metricas = None
+    scatter_img = None
+    displot_img = None
+    crosscorrelation_img = None
+    df_predicciones = None
+    df_parcial_predicciones = None
+    es_clasificacion = False
+    feature_importances_img = None
+    df_predicciones_html= None
+
+    try:
+        df = pd.read_csv(archivo.archivo.path, sep=None, engine='python', on_bad_lines='skip')
+        df.dropna(inplace=True)
+        columnas_numericas = df.select_dtypes(include=['number']).columns.tolist()
+    except Exception as e:
+        messages.error(request, f"Error al cargar archivo: {e}")
+        return render(request, "interfaz_modelado.html", {
+            "archivo": archivo,
+            "columnas": [],
+        })
+    if request.method == "POST":
+        tipo_modelo = request.POST.get("tipo_modelo", "randomforest")
+    else:
+        tipo_modelo = "randomforest"   # valor inicial por defecto
+
+    
+    if request.method == "POST":
+        tipo_modelo = request.POST.get("tipo_modelo")  # 🔹 RandomForest o Lineal
+        columna_objetivo = request.POST.get("columna_objetivo")
+        columnas_predictoras = request.POST.getlist("columnas_predictoras")
+
+        if not columna_objetivo or columna_objetivo not in df.columns:
+            messages.error(request, "Columna objetivo inválida.")
+            return render(request, "interfaz_modelado.html", {"archivo": archivo, "columnas": columnas_numericas})
+
+        if not columnas_predictoras:
+            messages.error(request, "Debes seleccionar al menos una columna predictora.")
+            return render(request, "interfaz_modelado.html", {"archivo": archivo, "columnas": columnas_numericas})
+
+        # ------------------------------------------------------
+        # 🔹 Caso 1: Modelo Lineal
+        # ------------------------------------------------------
+        if tipo_modelo == "lineal":
+            try:
+                X = df[columnas_predictoras].apply(pd.to_numeric, errors="coerce").dropna()
+                y = df[columna_objetivo].apply(pd.to_numeric, errors="coerce").dropna()
+                X, y = X.align(y, join="inner", axis=0)
+
+                # Obtener parámetros desde el formulario
+                n_jobs = request.POST.get("n_jobs")
+                n_jobs = int(n_jobs) if n_jobs and n_jobs.strip() != "" else None
+
+                # Crear y entrenar el modelo
+                modelo = LinearRegression(n_jobs=n_jobs)
+                modelo.fit(X, y)
+                y_pred = modelo.predict(X)
+
+                # Métricas
+                mae = mean_absolute_error(y, y_pred)
+                r2 = r2_score(y, y_pred)
+                metricas = {"mae": round(mae, 4), "r2": round(r2, 4)}
+
+                # Info del modelo
+                modelo_info = (
+                    f"Modelo de Regresión Lineal (OLS - Ordinary Least Squares) "
+                    f"entrenado para predecir '{columna_objetivo}' usando {len(columnas_predictoras)} predictores."
+                )
+
+                # Gráfico real vs predicho
+                fig, ax = plt.subplots(figsize=(8, 5))
+                ax.scatter(y, y_pred, alpha=0.6, label="Predicciones")
+                ax.plot([y.min(), y.max()], [y.min(), y.max()], 'r--', label="Ideal")
+                ax.set_xlabel("Valores reales")
+                ax.set_ylabel("Predicciones")
+                ax.set_title("Comparación Real vs Predicho (Lineal)")
+                ax.legend()
+
+                buf = io.BytesIO()
+                plt.savefig(buf, format="png", bbox_inches="tight")
+                buf.seek(0)
+                scatter_img = base64.b64encode(buf.getvalue()).decode("utf-8")
+                plt.close(fig)
+
+            except Exception as e:
+                messages.error(request, f"Error en el modelo lineal: {str(e)}")
+
+        # ------------------------------------------------------
+        # 🔹 Caso 2: RandomForest
+        # ------------------------------------------------------
+        elif tipo_modelo == "randomforest":
+            try:
+                
+                # Variables para estadísticas
+                total_filas = 0
+                conocidos_filas = 0
+                predichos_filas = 0
+                error_promedio = 0
+                accuracy_parcial = 0
+                
+
+                # Valores por defecto de los parámetros
+                parametros = {
+                    'test_size': 0.2,
+                    'random_state_split': 42,
+                    'n_estimators': 100,
+                    'random_state_model': 42,
+                    'max_depth': None,
+                    'min_samples_split': 2,
+                    'min_samples_leaf': 1
+                }
+                
+                # Valores para mostrar en la plantilla
+                test_size_percent = 20
+                train_size_percent = 80
+
+                try:
+                    
+                    # Identificar columnas numéricas y categóricas
+                    columnas_numericas = df.select_dtypes(include=['number']).columns.tolist()
+                    columnas_categoricas = df.select_dtypes(exclude=['number']).columns.tolist()
+                    
+                    # Convertir columnas categóricas si existen
+                    if columnas_categoricas:
+                        for col in columnas_categoricas:
+                            le = LabelEncoder()
+                            df[col] = le.fit_transform(df[col].astype(str))
+                        columnas_numericas = df.select_dtypes(include=['number']).columns.tolist()
+
+                except Exception as e:
+                    messages.error(request, f"Error al cargar archivo: {e}")
+                    return render(request, "interfaz_modelado.html", {
+                        "archivo": archivo,
+                        "columnas": [],
+                        "modelo_info": None,
+                        "metricas": None,
+                        "df_predicciones": None,
+                        "df_parcial_predicciones": None,
+                        "total_filas": total_filas,
+                        "conocidos_filas": conocidos_filas,
+                        "predichos_filas": predichos_filas,
+                        "error_promedio": error_promedio,
+                        "accuracy_parcial": accuracy_parcial,
+                        "parametros": parametros,
+                        "test_size_percent": test_size_percent,
+                        "train_size_percent": train_size_percent
+                    })
+
+                if request.method == "POST":
+                    columna_objetivo = request.POST.get("columna_objetivo")
+                    columnas_predictoras = request.POST.getlist("columnas_predictoras")
+                    valor_str = request.POST.get("valor", "").strip()
+                    predecir_columna = request.POST.get("predecir_columna") == "on"
+                    predecir_parcial = request.POST.get("predecir_parcial") == "on"
+                    porcentaje_datos = float(request.POST.get("porcentaje_datos", 50))
+                    numeric_df = df.select_dtypes(include=[np.number])
+
+                    # Obtener parámetros ajustables del usuario
+                    try:
+                        # test_size como porcentaje
+                        test_size_percent = float(request.POST.get("test_size", 20))
+                        parametros['test_size'] = test_size_percent / 100.0
+                        train_size_percent = 100 - test_size_percent
+                        
+                        # Parámetros principales
+                        parametros['random_state_split'] = int(request.POST.get("random_state_split", 42))
+                        parametros['n_estimators'] = int(request.POST.get("n_estimators", 100))
+                        parametros['random_state_model'] = int(request.POST.get("random_state_model", 42))
+                        
+                        # Parámetros avanzados
+                        max_depth_str = request.POST.get("max_depth", "")
+                        parametros['max_depth'] = int(max_depth_str) if max_depth_str and max_depth_str != "None" else None
+                        
+                        parametros['min_samples_split'] = int(request.POST.get("min_samples_split", 2))
+                        parametros['min_samples_leaf'] = int(request.POST.get("min_samples_leaf", 1))
+                        
+                    except (ValueError, TypeError):
+                        messages.warning(request, "Parámetros inválidos, usando valores por defecto.")
+                        parametros = {
+                            'test_size': 0.2,
+                            'random_state_split': 42,
+                            'n_estimators': 100,
+                            'random_state_model': 42,
+                            'max_depth': None,
+                            'min_samples_split': 2,
+                            'min_samples_leaf': 1
+                        }
+                        test_size_percent = 20
+                        train_size_percent = 80
+                    
+                
+
+                    # Validaciones
+                    if not columna_objetivo or columna_objetivo not in df.columns:
+                        messages.error(request, "Debes seleccionar una columna objetivo válida.")
+                        return render(request, "interfaz_modelado.html", {
+                            "archivo": archivo,
+                            "columnas": columnas_numericas,
+                            "modelo_info": None,
+                            "metricas": None,
+                            "df_predicciones": None,
+                            "df_parcial_predicciones": None,
+                            "total_filas": total_filas,
+                            "conocidos_filas": conocidos_filas,
+                            "predichos_filas": predichos_filas,
+                            "error_promedio": error_promedio,
+                            "accuracy_parcial": accuracy_parcial,
+                            "parametros": parametros,
+                            "test_size_percent": test_size_percent,
+                            "train_size_percent": train_size_percent
+                        })
+
+                    if not columnas_predictoras or not all(col in df.columns for col in columnas_predictoras):
+                        messages.error(request, "Debes seleccionar columnas predictoras válidas.")
+                        return render(request, "interfaz_modelado.html", {
+                            "archivo": archivo,
+                            "columnas": columnas_numericas,
+                            "modelo_info": None,
+                            "metricas": None,
+                            "df_predicciones": None,
+                            "df_parcial_predicciones": None,
+                            "total_filas": total_filas,
+                            "conocidos_filas": conocidos_filas,
+                            "predichos_filas": predichos_filas,
+                            "error_promedio": error_promedio,
+                            "accuracy_parcial": accuracy_parcial,
+                            "parametros": parametros,
+                            "test_size_percent": test_size_percent,
+                            "train_size_percent": train_size_percent
+                        })
+
+                    if columna_objetivo in columnas_predictoras:
+                        messages.error(request, "La columna objetivo no puede estar entre las predictoras.")
+                        return render(request, "interfaz_modelado.html", {
+                            "archivo": archivo,
+                            "columnas": columnas_numericas,
+                            "modelo_info": None,
+                            "metricas": None,
+                            "df_predicciones": None,
+                            "df_parcial_predicciones": None,
+                            "total_filas": total_filas,
+                            "conocidos_filas": conocidos_filas,
+                            "predichos_filas": predichos_filas,
+                            "error_promedio": error_promedio,
+                            "accuracy_parcial": accuracy_parcial,
+                            "parametros": parametros,
+                            "test_size_percent": test_size_percent,
+                            "train_size_percent": train_size_percent
+                        })
+
+                    try:
+                        # Preparar datos
+                        X = df[columnas_predictoras].apply(pd.to_numeric, errors='coerce')
+                        y = df[columna_objetivo].apply(pd.to_numeric, errors='coerce')
+                        
+                        # Eliminar filas con NaN
+                        mask = ~(X.isna().any(axis=1) | y.isna())
+                        X = X[mask]
+                        y = y[mask]
+                        
+                        if len(X) == 0:
+                            messages.error(request, "No hay datos válidos después de la limpieza.")
+                            return render(request, "interfaz_modelado.html", {
+                                "archivo": archivo,
+                                "columnas": columnas_numericas,
+                                "modelo_info": None,
+                                "metricas": None,
+                                "df_predicciones": None,
+                                "df_parcial_predicciones": None,
+                                "total_filas": total_filas,
+                                "conocidos_filas": conocidos_filas,
+                                "predichos_filas": predichos_filas,
+                                "error_promedio": error_promedio,
+                                "accuracy_parcial": accuracy_parcial,
+                                "parametros": parametros,
+                                "test_size_percent": test_size_percent,
+                                "train_size_percent": train_size_percent
+                            })
+                        
+                        # Determinar si es problema de clasificación o regresión
+                        if y.nunique() <= 10:
+                            es_clasificacion = True
+                            modelo = RandomForestClassifier(
+                                n_estimators=parametros['n_estimators'],
+                                random_state=parametros['random_state_model'],
+                                max_depth=parametros['max_depth'],
+                                min_samples_split=parametros['min_samples_split'],
+                                min_samples_leaf=parametros['min_samples_leaf']
+                            )
+                        else:
+                            modelo = RandomForestRegressor(
+                                n_estimators=parametros['n_estimators'],
+                                random_state=parametros['random_state_model'],
+                                max_depth=parametros['max_depth'],
+                                min_samples_split=parametros['min_samples_split'],
+                                min_samples_leaf=parametros['min_samples_leaf']
+                            )
+                        
+                        param_grid = {
+                            "n_estimators": [50, 100],
+                            "max_depth": [None, 10, 20],
+                            "min_samples_split": [2, 5],
+                            "min_samples_leaf": [1, 2]
+                        }
+
+                        if y.nunique() <= 10:
+                            es_clasificacion = True
+                            base_model = RandomForestClassifier(random_state=parametros['random_state_model'])
+                            scoring = "accuracy"
+                        else:
+                            base_model = RandomForestRegressor(random_state=parametros['random_state_model'])
+                            scoring = "r2"
+
+                        grid_search = GridSearchCV(
+                            base_model,
+                            param_grid,
+                            cv=5,
+                            scoring=scoring,
+                            n_jobs=-1
+                        )
+
+                        grid_search.fit(X, y)
+                        best_params = grid_search.best_params_
+                        best_score = grid_search.best_score_
+                        modelo = grid_search.best_estimator_
+
+                        
+                        # Entrenar modelo
+                        X_train, X_test, y_train, y_test = train_test_split(
+                            X, y, 
+                            test_size=parametros['test_size'],
+                            random_state=parametros['random_state_split']
+                        )
+                        
+                        modelo.fit(X_train, y_train)
+                        
+                        # Calcular métricas
+                        y_pred = modelo.predict(X_test)
+                        
+
+                        # Crear gráfico scatter solo si es regresión
+                        if not es_clasificacion:
+                            try:
+                                fig, ax = plt.subplots(figsize=(12, 6))
+
+                                # Eje X como índice temporal
+                                x_axis = range(len(y_test))
+
+                                # Puntos de valores reales
+                                ax.scatter(x_axis, y_test.values, label="Datos reales", color="blue", alpha=0.6, s=30)
+
+                                # Puntos de predicción
+                                ax.scatter(x_axis, y_pred, label="Predicción", color="green", alpha=0.6, s=30)
+
+                                ax.set_xlabel("Tiempo (índice de muestra)")
+                                ax.set_ylabel(columna_objetivo)
+                                ax.set_title(f"Comparación de valores reales vs predichos ({columna_objetivo})")
+                                ax.legend()
+
+                                # Guardar como imagen base64
+                                buf = io.BytesIO()
+                                plt.tight_layout()
+                                plt.savefig(buf, format="png")
+                                plt.close(fig)
+                                buf.seek(0)
+                                scatter_img = base64.b64encode(buf.getvalue()).decode("utf-8")
+
+                                # Generar gráfico displot (real vs predicho)
+                                fig, ax = plt.subplots(figsize=(8, 5))
+                                sns.histplot(y_test, color="blue", kde=True, label="Real", stat="density", ax=ax, alpha=0.4)
+                                sns.histplot(y_pred, color="green", kde=True, label="Predicho", stat="density", ax=ax, alpha=0.4)
+                                ax.set_title("Distribución Real vs Predicho")
+                                ax.set_xlabel("Valores")
+                                ax.set_ylabel("Densidad")
+                                ax.legend()
+
+                                # Convertir a base64
+                                buffer = io.BytesIO()
+                                plt.savefig(buffer, format="png", bbox_inches="tight")
+                                buffer.seek(0)
+                                displot_img = base64.b64encode(buffer.getvalue()).decode("utf-8")
+                                plt.close(fig)
+
+                                # Gráfico de correlación cruzada (50% de los datos)
+                                df_comparacion = pd.DataFrame({
+                                    "Índice": range(len(y_test)),
+                                    "y_real": y_test,
+                                    "y_pred": y_pred
+                                })
+                                #importancia de variables
+                                
+
+
+                                # Tomar el 50% aleatorio
+                                df_sample = df_comparacion.sample(frac=0.5, random_state=42)
+
+                                fig, ax = plt.subplots(figsize=(8, 5))
+                                sns.scatterplot(x="Índice", y="y_real", data=df_sample, ax=ax, color="orange", label="Real")
+                                sns.scatterplot(x="Índice", y="y_pred", data=df_sample, ax=ax, color="blue", label="Predicho")
+
+                                ax.set_title(f"Comparación Real vs Predicho ({columna_objetivo}) - Muestra 50%")
+                                ax.set_xlabel("Índice (muestra)")
+                                ax.set_ylabel("Valor")
+                                ax.legend()
+
+                                buffer = io.BytesIO()
+                                fig.savefig(buffer, format="png", bbox_inches="tight")
+                                buffer.seek(0)
+                                crosscorrelation_img = base64.b64encode(buffer.getvalue()).decode("utf-8")
+                                plt.close(fig)
+
+                            except Exception as e:
+                                print("Error al generar gráfico:", e)
+
+                        if es_clasificacion:
+                            accuracy = accuracy_score(y_test, y_pred)
+                            scores = cross_val_score(base_model, X, y, cv=5, scoring=scoring)
+                            cv_mean, cv_std = scores.mean(), scores.std()
+                            # 🔹 Importancia de variables (solo si el modelo lo soporta)
+                            if hasattr(modelo, "feature_importances_"):
+                                try:
+                                    importances = modelo.feature_importances_
+                                    features = columnas_predictoras
+
+                                    fig, ax = plt.subplots(figsize=(8, 5))
+                                    sns.barplot(x=importances, y=features, ax=ax, palette="viridis")
+                                    ax.set_title("Importancia de Variables")
+                                    ax.set_xlabel("Importancia")
+                                    ax.set_ylabel("Variables")
+
+                                    buffer = io.BytesIO()
+                                    plt.savefig(buffer, format="png", bbox_inches="tight")
+                                    buffer.seek(0)
+                                    feature_importances_img = base64.b64encode(buffer.getvalue()).decode("utf-8")
+                                    plt.close(fig)
+                                except Exception as e:
+                                    print("Error al generar gráfico de importancia:", e)
+                            metricas = {
+                                'accuracy': round(accuracy, 4),
+                                'classification_report': classification_report(y_test, y_pred),
+                                'n_estimators': modelo.n_estimators,
+                                'features_importances': sorted(
+                                    zip(columnas_predictoras, modelo.feature_importances_),
+                                    key=lambda x: x[1],
+                                    reverse=True
+                                ),
+                                'tipo': 'clasificación',
+                                'test_size': parametros['test_size'],
+                                'test_size_percent': test_size_percent,
+                                'random_state_split': parametros['random_state_split'],
+                                'random_state_model': parametros['random_state_model'],
+                                'max_depth': parametros['max_depth'],
+                                'min_samples_split': parametros['min_samples_split'],
+                                'min_samples_leaf': parametros['min_samples_leaf'],
+                                "best_params": best_params,
+                                "best_score": round(best_score, 4),
+                                "cv_mean": round(cv_mean, 4),
+                                "cv_std": round(cv_std, 4),
+                            }
+                        else:
+                            mae = mean_absolute_error(y_test, y_pred)
+                            r2 = r2_score(y_test, y_pred)
+                            metricas = {
+                                'mae': round(mae, 4),
+                                'r2': round(r2, 4),
+                                'n_estimators': modelo.n_estimators,
+                                'features_importances': sorted(
+                                    zip(columnas_predictoras, modelo.feature_importances_),
+                                    key=lambda x: x[1],
+                                    reverse=True
+                                ),
+                                'tipo': 'regresión',
+                                'test_size': parametros['test_size'],
+                                'test_size_percent': test_size_percent,
+                                'random_state_split': parametros['random_state_split'],
+                                'random_state_model': parametros['random_state_model'],
+                                'max_depth': parametros['max_depth'],
+                                'min_samples_split': parametros['min_samples_split'],
+                                'min_samples_leaf': parametros['min_samples_leaf']
+                            }
+                        
+                        modelo_info = f"Modelo RandomForest entrenado para predecir '{columna_objetivo}' usando {len(columnas_predictoras)} predictores."
+                        
+                        # Hacer predicción si se proporcionan valores
+                        if valor_str:
+                            try:
+                                nuevo_valor = [float(v.strip()) for v in valor_str.split(",")]
+                                if len(nuevo_valor) != len(columnas_predictoras):
+                                    messages.error(
+                                        request,
+                                        f"Debes ingresar {len(columnas_predictoras)} valores separados por coma (uno por cada predictor)."
+                                    )
+                                else:
+                                    prediccion = modelo.predict([nuevo_valor])[0]
+                                    messages.success(
+                                        request,
+                                        f"Predicción para '{columna_objetivo}': {prediccion:.4f}"
+                                    )
+                            except ValueError:
+                                messages.error(request, "Los valores de entrada deben ser números separados por comas.")
+                        
+                        # Predecir columna completa
+                        if predecir_columna:
+                            predicciones = modelo.predict(X)
+                            df_predicciones = df.loc[X.index].copy()
+                            df_predicciones[f'Predicción_{columna_objetivo}'] = predicciones
+                            df_predicciones['Error'] = np.abs(y.values - predicciones) if not es_clasificacion else (y.values != predicciones).astype(int)
+                            messages.success(request, f"Se han generado predicciones para {len(df_predicciones)} filas.")
+                        
+                        # Predicción parcial de datos
+                        if predecir_parcial:
+                            n_filas = len(X)
+                            n_entrenamiento = int(n_filas * (porcentaje_datos / 100))
+                            indices = X.index.tolist()
+                            random.shuffle(indices)
+                            indices_con_target = indices[:n_entrenamiento]
+                            indices_sin_target = indices[n_entrenamiento:]
+                            
+                            if not indices_sin_target:
+                                messages.warning(request, "No hay datos para predecir con el porcentaje seleccionado.")
+                            else:
+                                # Entrenar modelo solo con datos conocidos
+                                X_conocido = X.loc[indices_con_target]
+                                y_conocido = y.loc[indices_con_target]
+                                
+                                if es_clasificacion:
+                                    modelo_parcial = RandomForestClassifier(
+                                        n_estimators=parametros['n_estimators'],
+                                        random_state=parametros['random_state_model'],
+                                        max_depth=parametros['max_depth'],
+                                        min_samples_split=parametros['min_samples_split'],
+                                        min_samples_leaf=parametros['min_samples_leaf']
+                                    )
+                                else:
+                                    modelo_parcial = RandomForestRegressor(
+                                        n_estimators=parametros['n_estimators'],
+                                        random_state=parametros['random_state_model'],
+                                        max_depth=parametros['max_depth'],
+                                        min_samples_split=parametros['min_samples_split'],
+                                        min_samples_leaf=parametros['min_samples_leaf']
+                                    )
+                                
+                                modelo_parcial.fit(X_conocido, y_conocido)
+                                predicciones_todas = modelo_parcial.predict(X)
+                                
+                                df_parcial_predicciones = df.loc[X.index].copy()
+                                df_parcial_predicciones[f'Predicción_{columna_objetivo}'] = predicciones_todas
+                                
+                                if es_clasificacion:
+                                    df_parcial_predicciones['Error'] = (y.values != predicciones_todas).astype(int)
+                                else:
+                                    df_parcial_predicciones['Error'] = np.abs(y.values - predicciones_todas)
+                                
+                                df_parcial_predicciones['Tipo'] = 'Predicho'
+                                df_parcial_predicciones.loc[indices_con_target, 'Tipo'] = 'Conocido (Entrenamiento)'
+                                
+                                total_filas = len(df_parcial_predicciones)
+                                conocidos_filas = len(indices_con_target)
+                                predichos_filas = len(indices_sin_target)
+                                if df_predicciones is not None:
+                                    df_predicciones_html = df_predicciones.head(20).to_html(classes="table table-striped table-sm", index=False)
+                                else:
+                                    df_predicciones_html = None
+                                if conocidos_filas > 0:
+                                    datos_entrenamiento = df_parcial_predicciones.loc[indices_con_target]
+                                    if es_clasificacion:
+                                        correctos = len(datos_entrenamiento[datos_entrenamiento['Error'] == 0])
+                                        accuracy_parcial = round((correctos / conocidos_filas) * 100, 2)
+                                    else:
+                                        error_promedio = round(datos_entrenamiento['Error'].mean(), 4)
+                                
+                                messages.success(request, f"Predicción parcial completada. {conocidos_filas} filas para entrenamiento, {predichos_filas} filas predichas.")
+                            
+                    except Exception as e:
+                        messages.error(request, f"Error durante el modelado: {str(e)}")
+                        import traceback
+                        traceback.print_exc()
+
+            except Exception as e:
+                messages.error(request, f"Error en el modelo RandomForest: {str(e)}")
+
+    return render(request, "interfaz_modelado.html", {
+        "archivo": archivo,
+        "columnas": columnas_numericas,
+        "modelo_info": modelo_info,
+        "metricas": metricas,
+        "scatter_img": scatter_img,
+        "displot_img": displot_img,
+        "crosscorrelation_img": crosscorrelation_img,
+        "df_predicciones": df_predicciones,
+        "df_parcial_predicciones": df_parcial_predicciones,
+        "es_clasificacion": es_clasificacion,
+        "tipo_modelo": tipo_modelo,
+        "feature_importances_img": feature_importances_img,
+        "df_predicciones": df_predicciones_html,
+
+    })
+"""
 def interfaz_modelado(request, id):
     archivo = get_object_or_404(ArchivoSubido, id=id)
     modelo_info = None
@@ -1764,7 +2427,8 @@ def interfaz_modelado(request, id):
         "crosscorrelation_img": crosscorrelation_img,
 
     })
-
+#en teoria ya nada referncia descargar_predicciones, si es asi borrar todo
+    path('descargar_predicciones/<int:id>/', views.descargar_predicciones, name='descargar_predicciones'),
 def descargar_predicciones(request, id):
     if request.method == "POST":
         datos_predicciones = request.POST.get("datos_predicciones")
@@ -1780,7 +2444,7 @@ def descargar_predicciones(request, id):
         except Exception as e:
             messages.error(request, f"Error al generar el archivo: {str(e)}")
             return redirect('interfaz_modelado', id=id)
-
+"""
 from django.shortcuts import render, get_object_or_404
 from django.contrib import messages
 import pandas as pd
@@ -2352,6 +3016,86 @@ def prueba_modelado_randomforest(request, id):
         "feature_importances_img": feature_importances_img,
     })
 
+# Nuevo modelo para predicciones 
+from sklearn.linear_model import LinearRegression
+
+def interfaz_modelado_lineal(request, id):
+    archivo = get_object_or_404(ArchivoSubido, id=id)
+    modelo_info = None
+    metricas = None
+    scatter_img = None
+
+    try:
+        df = pd.read_csv(archivo.archivo.path, sep=None, engine='python', on_bad_lines='skip')
+        df.dropna(inplace=True)
+
+        columnas_numericas = df.select_dtypes(include=['number']).columns.tolist()
+
+    except Exception as e:
+        messages.error(request, f"Error al cargar archivo: {e}")
+        return render(request, "interfaz_modelado_lineal.html", {
+            "archivo": archivo,
+            "columnas": [],
+            "modelo_info": None,
+            "metricas": None,
+            "scatter_img": None,
+        })
+
+    if request.method == "POST":
+        columna_objetivo = request.POST.get("columna_objetivo")
+        columnas_predictoras = request.POST.getlist("columnas_predictoras")
+
+        if not columna_objetivo or columna_objetivo not in df.columns:
+            messages.error(request, "Columna objetivo inválida.")
+            return render(request, "interfaz_modelado_lineal.html", {
+                "archivo": archivo,
+                "columnas": columnas_numericas,
+                "modelo_info": None,
+                "metricas": None,
+                "scatter_img": None,
+            })
+
+        X = df[columnas_predictoras].apply(pd.to_numeric, errors="coerce").dropna()
+        y = df[columna_objetivo].apply(pd.to_numeric, errors="coerce").dropna()
+
+        X, y = X.align(y, join="inner", axis=0)
+
+        modelo = LinearRegression()
+        modelo.fit(X, y)
+        y_pred = modelo.predict(X)
+
+        # Métricas
+        mae = mean_absolute_error(y, y_pred)
+        r2 = r2_score(y, y_pred)
+        metricas = {"mae": round(mae, 4), "r2": round(r2, 4)}
+
+        modelo_info = f"Modelo de Regresión Lineal entrenado para predecir '{columna_objetivo}'."
+
+        # Gráfico comparativo
+        try:
+            fig, ax = plt.subplots(figsize=(8, 5))
+            ax.scatter(y, y_pred, alpha=0.6)
+            ax.plot([y.min(), y.max()], [y.min(), y.max()], 'r--')
+            ax.set_xlabel("Valores reales")
+            ax.set_ylabel("Predicciones")
+            ax.set_title("Comparación Real vs Predicho")
+
+            buf = io.BytesIO()
+            plt.savefig(buf, format="png", bbox_inches="tight")
+            buf.seek(0)
+            scatter_img = base64.b64encode(buf.getvalue()).decode("utf-8")
+            plt.close(fig)
+        except Exception as e:
+            print("Error gráfico:", e)
+
+    return render(request, "interfaz_modelado_lineal.html", {
+        "archivo": archivo,
+        "columnas": columnas_numericas,
+        "modelo_info": modelo_info,
+        "metricas": metricas,
+        "scatter_img": scatter_img,
+    })
+
 
 def eliminar_archivo(request, archivo_id):
     archivo = get_object_or_404(ArchivoSubido, pk=archivo_id)
@@ -2368,7 +3112,22 @@ def eliminar_archivo(request, archivo_id):
     messages.success(request, "Archivo borrado exitosamente")
     return redirect('interfaz')
 
+@require_POST
+def eliminar_multiple(request):
+    ids = request.POST.getlist("archivos")  # lista de IDs seleccionados
+    for archivo_id in ids:
+        archivo = get_object_or_404(ArchivoSubido, pk=archivo_id)
+        archivo_path = os.path.join(settings.MEDIA_ROOT, archivo.archivo.name)
 
+        if os.path.exists(archivo_path):
+            os.remove(archivo_path)
+
+        archivo.delete()
+
+    messages.success(request, f"Se eliminaron {len(ids)} archivo(s).")
+    return redirect("interfaz")
+"""
+path('register/', views.register, name='register')
 def register(request):
     if request.method == 'POST':
         form = CustomUserCreationForm(request.POST)
@@ -2378,4 +3137,55 @@ def register(request):
             return redirect('interfaz')
     else:
         form = CustomUserCreationForm()
-    return render(request, 'register.html', {'form': form})
+    return render(request, 'register.html', {'form': form})"""
+
+"""Nueva parte de SuperUsers"""
+def superuser_required(view_func):
+    return user_passes_test(lambda u: u.is_superuser)(view_func)
+
+
+@superuser_required
+def panel_admin(request):
+    """
+    Vista exclusiva para superusuarios:
+    - Crear usuarios nuevos
+    - Eliminar imágenes generadas en /media/*.png
+    """
+    if request.method == "POST":
+        action = request.POST.get("action")
+
+        # 🔹 Crear usuario
+        if action == "crear_usuario":
+            username = request.POST.get("username")
+            password = request.POST.get("password")
+            is_super = request.POST.get("is_superuser") == "on"
+
+            if not username or not password:
+                return JsonResponse({"success": False, "message": "Debes ingresar usuario y contraseña."})
+
+            if User.objects.filter(username=username).exists():
+                return JsonResponse({"success": False, "message": f"El usuario '{username}' ya existe."})
+
+            user = User.objects.create_user(username=username, password=password)
+            if is_super:
+                user.is_superuser = True
+                user.is_staff = True
+                user.save()
+
+            return JsonResponse({"success": True, "message": f"Usuario '{username}' creado con éxito."})
+
+        # 🔹 Eliminar imágenes .png en /media
+        elif action == "eliminar_imagenes":
+            media_path = settings.MEDIA_ROOT
+            eliminados = 0
+            for archivo in os.listdir(media_path):
+                if archivo.endswith(".png"):
+                    try:
+                        os.remove(os.path.join(media_path, archivo))
+                        eliminados += 1
+                    except:
+                        pass
+            return JsonResponse({"success": True, "message": f"Se eliminaron {eliminados} imágenes .png generadas."})
+
+    # 🚀 Render normal solo si GET
+    return render(request, "panel_admin.html")

@@ -1,7 +1,7 @@
 {% load static %}
 {% block content %}
 <div class="container mt-5">
-    <h2 class="mb-4 text-center">Procesamiento de archivo: {{ archivo.nombre }}</h2>
+    <!--<h2 class="mb-4 text-center">Procesamiento de archivo: {{ archivo.nombre }}</h2>-->
 
     <form method="post" action="{% url 'interfaz_procesamiento' archivo.id %}">
         {% csrf_token %}
@@ -41,13 +41,16 @@
                     </div>
                     <div class="card-body">
                         <div class="form-group mb-3">
-                            <label for="columnas">Selecciona columnas:</label>
-                            <select class="form-select" name="columnas" id="columnas" multiple>
+                            <label>Selecciona columnas:</label>
+                            <div class="d-flex flex-wrap">
                                 {% for col in columnas %}
-                                    <option value="{{ col }}">{{ col }}</option>
+                                    <div class="form-check me-3 mb-2">
+                                        <input class="form-check-input" type="checkbox" name="columnas" id="col_{{ forloop.counter }}" value="{{ col }}">
+                                        <label class="form-check-label" for="col_{{ forloop.counter }}">{{ col }}</label>
+                                    </div>
                                 {% endfor %}
-                            </select>
-                            <small class="form-text text-muted">Usa Ctrl o Cmd para seleccionar múltiples columnas.</small>
+                            </div>
+                            <small class="form-text text-muted">Selecciona las columnas con los cuadros de verificación.</small>
                         </div>
 
                         <div class="form-check mb-2">
@@ -61,63 +64,164 @@
                     </div>
                 </div>
             </div>
+
         </div>
 
         <!-- Botones -->
         <div class="text-center mb-4">
             <button type="submit" class="btn btn-primary">Aplicar procesamiento</button>
             <a href="{% url 'interfaz' %}" class="btn btn-secondary">Volver al archivo</a>
-            <a href="{% url 'modificar_separadores' archivo.id %}" class="btn btn-secondary">Cambio de los separadores</a>
+            <a href="{% url 'modificar_separadores' archivo.id %}"
+                class="btn btn-secondary"
+                id="btn-cambiar-separadores"
+                type="button">
+                Cambio de los separadores
+            </a>
         </div>
         
         
     </form>
 
     <!-- Gráficos -->
-    <div class="row">
-        <div class="col-md-6">
-            <div class="card mb-4">
-                <div class="card-header">Grafico Original</div>
-                <div class="card-body">
-                    {% if comparativo_boxplot %}
-                        <h4>Boxplot Comparativo</h4>
-                        <img src="data:image/png;base64,{{ comparativo_boxplot }}" class="img-fluid" />
-                    {% else %}
-                        <p>No se pudo generar el boxplot comparativo.</p>
-                    {% endif %}
-                </div>
-            </div>
-        </div>
-        <div class="col-md-6">
-            <div class="card mb-4">
-                <div class="card-header">Gráfico Actual</div>
-                <div class="card-body">
-                    {% if tendencia %}
-                        <h3>Boxplot</h3>
-                        <img src="data:image/png;base64,{{ boxplot }}" class="img-fluid" />
-                    {% endif %}
-                </div>
-            </div>
-        </div>
-    </div>
-</div>
+<!-- Aqui lo que hice fue que cuando no aparezcan los otros graficos se ajusten los dos,  -->
+          
+{% if comparativo_boxplot or comparativo_correlacion %}
+    
 <div class="row">
-    <!-- Matriz de correlación -->
-    <div class="col-md-12">
-        <div class="card mb-4">
-            <div class="card-header bg-info text-white">
-                Matriz de correlación
-            </div>
-            <div class="card-body text-center">
-                {% if correlacion_img %}
-                    <img src="data:image/png;base64,{{ correlacion_img }}" 
-                    class="img-fluid rounded shadow" 
-                    width="500" height="400"/>
-                {% else %}
-                    <p>No hay suficientes columnas numéricas para calcular la correlación.</p>
-                {% endif %}
-            </div>
+    {% if comparativo_boxplot %}
+        <div class="col-md-6 mb-4">
+            <h3 class="section-title text-info">Boxplot (Archivo original)</h3>
+            <img src="data:image/png;base64,{{ comparativo_boxplot }}" 
+                 class="img-fluid rounded shadow zoom-img" 
+                 alt="Boxplot comparativo"
+                 onclick="showImageModal(this)">
         </div>
+    
+    {% endif %}
+
+    {% if boxplot %}
+        <div class="col-md-6 mb-4">
+            <h3 class="section-title text-info">Boxplot (Archivo Actual)</h3>
+            <img src="data:image/png;base64,{{ boxplot }}" 
+                 class="img-fluid rounded shadow zoom-img" 
+                 alt="Boxplot actual"
+                 onclick="showImageModal(this)">
+        </div>
+    
+    {% endif %}
+</div>
+
+<div class="row">
+    <div class="col-md-6 mb-4">
+        {% if comparativo_correlacion %}
+        <h3>Matriz de correlación (Archivo original)</h3>
+        <img src="data:image/png;base64,{{ comparativo_correlacion }}" 
+                    class="img-fluid rounded shadow zoom-img" 
+                    alt="Matriz de correlación"
+                    onclick="showImageModal(this)">
+        
+        {% endif %}
+    </div>
+    <div class="col-md-6 mb-4">
+    {% if correlacion_img %}
+        <div class="col-md-12 mb-4 text-center">
+            <h3 class="section-title text-info">Matriz de correlación (Archivo Actual)</h3>
+            <img src="data:image/png;base64,{{ correlacion_img }}" 
+                 class="img-fluid rounded shadow zoom-img" 
+                 alt="Matriz de correlación"
+                 onclick="showImageModal(this)">
+        </div>
+    
+    {% endif %}
     </div>
 </div>
+{% else %}
+<div class="row">
+    <p>No se encontró ningun archivo fuera de este con un nombre parecido.</p>
+    {% if boxplot %}
+        <div class="col-md-6 mb-4">
+            <h3 class="section-title text-info">Boxplot (Archivo Actual)</h3>
+            <img src="data:image/png;base64,{{ boxplot }}" 
+                 class="img-fluid rounded shadow zoom-img" 
+                 alt="Boxplot actual"
+                 onclick="showImageModal(this)">
+        </div>
+    
+    {% endif %}
+    {% if correlacion_img %}
+        <div class="col-md-6 mb-4">
+            <h3 class="section-title text-info">Matriz de correlación (Archivo Actual)</h3>
+            <img src="data:image/png;base64,{{ correlacion_img }}" 
+                 class="img-fluid rounded shadow zoom-img" 
+                 alt="Matriz de correlación"
+                 onclick="showImageModal(this)">
+        </div>
+    
+    {% endif %}
+</div>
+{% endif %}
+<!-- Modal para zoom de imágenes -->
+<div id="imageModal" class="modal" onclick="closeImageModal()">
+    <span class="close">&times;</span>
+    <img class="modal-content" id="modalImage">
+</div>
+<script>
+function mostrarPopup(titulo, mensaje, callback) {
+    // Crear modal simple de Bootstrap
+    const modalHtml = `
+    <div class="modal fade" id="popupModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header bg-success text-white">
+                    <h5 class="modal-title">${titulo}</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">${mensaje}</div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-success" data-bs-dismiss="modal">Aceptar</button>
+                </div>
+            </div>
+        </div>
+    </div>`;
+
+    document.body.insertAdjacentHTML("beforeend", modalHtml);
+
+    const modal = new bootstrap.Modal(document.getElementById("popupModal"));
+    const modalElement = document.getElementById("popupModal");
+
+    modalElement.addEventListener("hidden.bs.modal", () => {
+        modalElement.remove();
+        if (typeof callback === "function") callback();
+    });
+
+    modal.show();
+}
+
+document.getElementById("btn-cambiar-separadores")?.addEventListener("click", function(e) {
+    e.preventDefault(); // evita redirección
+
+    fetch(this.href, {
+        method: "POST",
+        headers: {
+            "X-CSRFToken": "{{ csrf_token }}",
+            "X-Requested-With": "XMLHttpRequest"
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            mostrarPopup("Éxito", "Los separadores fueron corregidos correctamente.", () => {
+                location.reload(); // recarga solo cuando el usuario cierre el popup
+            });
+        } else {
+            mostrarPopup("Error", data.message || "Ocurrió un error al procesar los separadores.");
+        }
+    })
+    .catch(err => {
+        mostrarPopup("Error", "Error en la conexión con el servidor.");
+        console.error(err);
+    });
+});
+</script>
+
 {% endblock %}
